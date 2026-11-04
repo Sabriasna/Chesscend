@@ -94,7 +94,7 @@ export default function HomeScreen({ nav }) {
         <Card style={styles.puzzle} onPress={() => nav.go({ name: 'puzzles', startId: nextPuzzle?.id })}>
           <MaterialCommunityIcons name="puzzle" size={30} color={C.ink} />
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={T.h3}>Daily Puzzle</Text>
+            <Text style={T.h3}>Puzzle Challenge</Text>
             <Text style={T.small}>
               {progress.puzzlesSolved.length} / {PUZZLES.length} solved · Find the checkmate
             </Text>

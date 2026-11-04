@@ -12,7 +12,7 @@ export default function CourseScreen({ courseId, nav }) {
   const done = course.lessons.filter((l) => progress.lessonsDone.includes(l.id)).length;
   return (
     <>
-      <BackHeader title={course.level} onBack={nav.back} />
+      <BackHeader title="Course" onBack={nav.back} />
       <Page>
         <Hero title={course.title} subtitle={course.description} pieces={['p']} size={90} />
         <View style={styles.inline}>

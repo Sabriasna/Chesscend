@@ -58,6 +58,26 @@ export function GameOverModal({ visible, title, subtitle, extra, onReplay, onClo
   );
 }
 
+export function ConfirmModal({ visible, title, text, confirm, cancel, onConfirm, onCancel }) {
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
+      <Pressable style={styles.backdrop} onPress={onCancel}>
+        <Pressable style={styles.sheet} onPress={() => {}}>
+          <View style={styles.trophy}>
+            <MaterialCommunityIcons name="flag-outline" size={36} color={C.gold} />
+          </View>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.sub}>{text}</Text>
+          <View style={{ gap: 10, marginTop: 20, alignSelf: 'stretch' }}>
+            <PillButton label={confirm} onPress={onConfirm} />
+            <PillButton label={cancel} variant="light" size="m" onPress={onCancel} />
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 /** Simple information sheet (notifications, "coming soon"…). */
 export function InfoModal({ visible, icon = 'bell-outline', title, text, onClose }) {
   return (

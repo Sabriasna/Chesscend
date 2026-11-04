@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../context/AppContext';
 import Board from '../components/Board';
 import Piece from '../components/Piece';
-import { GameOverModal, PromotionModal } from '../components/Modals';
+import { ConfirmModal, GameOverModal, PromotionModal } from '../components/Modals';
 import { Avatar, BackHeader } from '../components/ui';
 import { AI_LEVELS, findBestMove } from '../engine/ai';
-import { Game, squareName } from '../engine/chess';
+import { Game } from '../engine/chess';
+import { coachMessage, findThreats } from '../engine/coach';
 import { clearSavedGame, saveGame } from '../storage/storage';
 import { tcLabel } from '../data/timeControls';
 import { C, F, radius, shadow } from '../theme/ui';
@@ -16,7 +17,6 @@ import { C, F, radius, shadow } from '../theme/ui';
 const other = (c) => (c === 'w' ? 'b' : 'w');
 const START_COUNT = { p: 8, n: 2, b: 2, r: 2, q: 1, k: 1 };
 const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-const NAME = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 const REASONS = {
   checkmate: 'by checkmate',
   stalemate: 'Stalemate: no legal move, but no check',
@@ -54,6 +54,7 @@ export default function GameScreen({ config, initialMoves, initialClocks, nav })
   const [thinking, setThinking] = useState(false);
   const [showEnd, setShowEnd] = useState(false);
   const [manualFlip, setManualFlip] = useState(false);
+  const [askResign, setAskResign] = useState(false);
   const recorded = useRef(false);
 
   const pos = game.pos;
@@ -191,18 +192,10 @@ export default function GameScreen({ config, initialMoves, initialClocks, nav })
 
   const resign = () => {
     const loser = isAi ? config.playerColor : turn;
-    Alert.alert('Resign?', 'You will lose this game.', [
-      { text: 'Keep playing', style: 'cancel' },
-      {
-        text: 'Resign',
-        style: 'destructive',
-        onPress: () => {
-          setOverride({ over: true, winner: other(loser), reason: 'resign' });
-          setSelected(null);
-          setShowEnd(true);
-        },
-      },
-    ]);
+    setAskResign(false);
+    setOverride({ over: true, winner: other(loser), reason: 'resign' });
+    setSelected(null);
+    setShowEnd(true);
   };
 
   const replay = () => {
@@ -219,42 +212,23 @@ export default function GameScreen({ config, initialMoves, initialClocks, nav })
 
   // ---- Hints & coach ------------------------------------------------------
   const hints = settings.showHints;
-  const danger = useMemo(() => {
-    if (!hints || result.over || !humanTurn) return [];
-    const out = [];
-    pos.board.forEach((p, i) => {
-      if (p && p.color === turn && p.type !== 'k' && pos.isAttacked(i, other(turn)) && !pos.isAttacked(i, turn)) out.push(i);
-    });
-    return out;
-  }, [hints, version, result.over, humanTurn]); // eslint-disable-line react-hooks/exhaustive-deps
+  const threats = useMemo(
+    () => (!hints || result.over || !humanTurn ? [] : findThreats(pos, turn)),
+    [hints, version, result.over, humanTurn], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const danger = threats.map((t) => t.square);
 
   const coach = useMemo(() => {
     if (!hints || result.over) return null;
     if (thinking) return { icon: 'robot-outline', text: 'The computer is thinking…' };
     if (!humanTurn) return null;
-    const you = isAi ? 'you' : turn === 'w' ? 'White' : 'Black';
-    const your = isAi ? 'your' : turn === 'w' ? "White's" : "Black's";
-    const last = game.lastMove();
-    if (pos.inCheck()) {
-      return { tone: 'red', text: `Check! ${isAi ? 'Your' : your} king is attacked. Move it, block the attack, or capture the attacker.` };
-    }
-    if (last && last.captured && last.color !== turn) {
-      const canRetake = pos.isAttacked(last.to, turn);
-      return canRetake
-        ? { text: `${isAi ? 'The computer' : 'Your opponent'} took ${your} ${NAME[last.captured]}. Good news: ${you} can take back on ${squareName(last.to)}!` }
-        : { tone: 'red', text: `${isAi ? 'The computer' : 'Your opponent'} took ${your} ${NAME[last.captured]} for free. Tip: before each move, check which pieces are undefended.` };
-    }
-    if (danger.length) {
-      const worst = danger.reduce((a, b) => (VALUE[pos.board[b].type] > VALUE[pos.board[a].type] ? b : a));
-      return {
-        tone: 'orange',
-        text: `Careful: ${your} ${NAME[pos.board[worst].type]} on ${squareName(worst)} is attacked and not defended (orange square). Move it or protect it.`,
-      };
-    }
-    if (game.history.length < 2) return { text: 'Tip: start by moving a center pawn (e4 or d4). Tap a piece to see where it can go.' };
-    if (game.history.length < 10) return { text: 'Tip: bring out your knights and bishops, then castle to keep your king safe.' };
-    return null;
-  }, [hints, version, result.over, thinking, humanTurn, danger]); // eslint-disable-line react-hooks/exhaustive-deps
+    const names = isAi
+      ? { you: 'you', your: 'your', opponent: 'The computer' }
+      : turn === 'w'
+        ? { you: 'White', your: "White's", opponent: 'Black' }
+        : { you: 'Black', your: "Black's", opponent: 'White' };
+    return coachMessage(game, threats, names);
+  }, [hints, version, result.over, thinking, humanTurn, threats]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const checkSquare = pos.inCheck() ? pos.findKing(turn) : null;
   const last = game.lastMove();
@@ -383,7 +357,7 @@ export default function GameScreen({ config, initialMoves, initialClocks, nav })
           {result.over ? (
             <Action icon="play" label="New game" onPress={replay} />
           ) : (
-            <Action icon="flag" label="Resign" onPress={resign} disabled={game.history.length === 0} />
+            <Action icon="flag" label="Resign" onPress={() => setAskResign(true)} disabled={game.history.length === 0} />
           )}
         </View>
       </ScrollView>
@@ -394,6 +368,15 @@ export default function GameScreen({ config, initialMoves, initialClocks, nav })
         theme={theme}
         onChoose={choosePromotion}
         onCancel={() => setPendingPromo(null)}
+      />
+      <ConfirmModal
+        visible={askResign}
+        title="Resign this game?"
+        text={isAi ? 'The computer will win this game.' : `${turn === 'w' ? 'White' : 'Black'} resigns and ${turn === 'w' ? 'Black' : 'White'} wins.`}
+        confirm="Resign"
+        cancel="Keep playing"
+        onConfirm={resign}
+        onCancel={() => setAskResign(false)}
       />
       <GameOverModal
         visible={showEnd && result.over}
