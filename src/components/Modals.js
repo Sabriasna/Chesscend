@@ -1,57 +1,90 @@
 import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSettings } from '../context/SettingsContext';
-import { SERIF } from '../theme/themes';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { C, F, radius } from '../theme/ui';
 import Piece from './Piece';
-import { Button } from './ui';
-export function PromotionModal({ visible, color, onChoose, onCancel, }) {
-    const { theme } = useSettings();
-    const choices = [
-        { t: 'q', name: 'Dame' },
-        { t: 'r', name: 'Tour' },
-        { t: 'b', name: 'Fou' },
-        { t: 'n', name: 'Cavalier' },
-    ];
-    return (<Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
+import { PillButton } from './ui';
+
+export function PromotionModal({ visible, color, theme, onChoose, onCancel }) {
+  const choices = [
+    { t: 'q', name: 'Queen' },
+    { t: 'r', name: 'Rook' },
+    { t: 'b', name: 'Bishop' },
+    { t: 'n', name: 'Knight' },
+  ];
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
       <Pressable style={styles.backdrop} onPress={onCancel}>
-        <View style={[styles.card, { backgroundColor: theme.surface }]}>
-          <Text style={[styles.title, { color: theme.text }]}>Promotion du pion</Text>
+        <View style={styles.sheet}>
+          <Text style={styles.title}>Promote your pawn</Text>
+          <Text style={styles.sub}>Most players choose the queen.</Text>
           <View style={styles.row}>
-            {choices.map((c) => (<Pressable key={c.t} onPress={() => onChoose(c.t)} style={({ pressed }) => [
-                styles.choice,
-                { backgroundColor: pressed ? theme.selected : theme.light },
-            ]}>
-                <Piece type={c.t} color={color} size={56} theme={theme}/>
-                <Text style={{ color: theme.frame, fontSize: 11, fontWeight: '700' }}>{c.name}</Text>
-              </Pressable>))}
+            {choices.map((c) => (
+              <Pressable
+                key={c.t}
+                onPress={() => onChoose(c.t)}
+                style={({ pressed }) => [styles.choice, { backgroundColor: pressed ? C.goldLight : C.goldPale }]}
+              >
+                <Piece type={c.t} color={color} size={54} theme={theme} />
+                <Text style={styles.choiceText}>{c.name}</Text>
+              </Pressable>
+            ))}
           </View>
         </View>
       </Pressable>
-    </Modal>);
+    </Modal>
+  );
 }
-export function GameOverModal({ visible, title, subtitle, onReplay, onClose, onMenu, }) {
-    const { theme } = useSettings();
-    return (<Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+
+export function GameOverModal({ visible, title, subtitle, extra, onReplay, onClose, onMenu }) {
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.accent, borderWidth: 1 }]}>
-          <Text style={{ fontSize: 44, textAlign: 'center', color: theme.accent }}>{'♚︎'}</Text>
-          <Text style={[styles.bigTitle, { color: theme.text }]}>{title}</Text>
-          <Text style={[styles.subtitle, { color: theme.textMuted }]}>{subtitle}</Text>
-          <View style={{ gap: 10, marginTop: 18, alignSelf: 'stretch' }}>
-            <Button label="Rejouer" icon="↻" onPress={onReplay}/>
-            <Button label="Voir l'échiquier" variant="secondary" onPress={onClose}/>
-            <Button label="Menu principal" variant="ghost" onPress={onMenu}/>
+        <View style={styles.sheet}>
+          <View style={styles.trophy}>
+            <MaterialCommunityIcons name="trophy" size={40} color={C.gold} />
+          </View>
+          <Text style={[styles.title, { fontSize: 28 }]}>{title}</Text>
+          <Text style={styles.sub}>{subtitle}</Text>
+          {extra ? <Text style={[styles.sub, { color: C.ink, fontFamily: F.semibold, marginTop: 6 }]}>{extra}</Text> : null}
+          <View style={{ gap: 10, marginTop: 20, alignSelf: 'stretch' }}>
+            <PillButton label="Play again" icon="rotate-cw" onPress={onReplay} />
+            <PillButton label="View the board" variant="light" size="m" onPress={onClose} />
+            <PillButton label="Back to home" variant="light" size="m" onPress={onMenu} />
           </View>
         </View>
       </View>
-    </Modal>);
+    </Modal>
+  );
 }
+
+/** Simple information sheet (notifications, "coming soon"…). */
+export function InfoModal({ visible, icon = 'bell-outline', title, text, onClose }) {
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <View style={styles.sheet}>
+          <View style={styles.trophy}>
+            <MaterialCommunityIcons name={icon} size={36} color={C.gold} />
+          </View>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={[styles.sub, { lineHeight: 22 }]}>{text}</Text>
+          <PillButton label="Got it" size="m" onPress={onClose} style={{ marginTop: 18, alignSelf: 'stretch' }} />
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
-    backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-    card: { borderRadius: 20, padding: 22, alignItems: 'center', minWidth: 290, maxWidth: 380, width: '100%' },
-    title: { fontSize: 18, fontWeight: '700', marginBottom: 16, fontFamily: SERIF },
-    row: { flexDirection: 'row', gap: 10 },
-    choice: { borderRadius: 12, padding: 6, alignItems: 'center' },
-    bigTitle: { fontSize: 26, fontFamily: SERIF, fontWeight: '700', textAlign: 'center', marginTop: 4 },
-    subtitle: { fontSize: 15, textAlign: 'center', marginTop: 6 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(30, 20, 5, 0.45)', alignItems: 'center', justifyContent: 'center', padding: 22 },
+  sheet: { backgroundColor: C.card, borderRadius: radius.l, padding: 22, alignItems: 'center', width: '100%', maxWidth: 380 },
+  title: { fontFamily: F.bold, fontSize: 20, color: C.ink, textAlign: 'center' },
+  sub: { fontFamily: F.regular, fontSize: 15, color: C.muted, textAlign: 'center', marginTop: 4 },
+  row: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  choice: { borderRadius: radius.s, padding: 6, alignItems: 'center' },
+  choiceText: { fontFamily: F.semibold, fontSize: 11, color: C.ink },
+  trophy: {
+    width: 72, height: 72, borderRadius: 36, backgroundColor: C.goldPale, alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+  },
 });

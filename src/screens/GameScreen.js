@@ -1,392 +1,534 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, } from 'react-native';
+import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useApp } from '../context/AppContext';
 import Board from '../components/Board';
 import Piece from '../components/Piece';
 import { GameOverModal, PromotionModal } from '../components/Modals';
-import { Header } from '../components/ui';
-import { useSettings } from '../context/SettingsContext';
+import { Avatar, BackHeader } from '../components/ui';
 import { AI_LEVELS, findBestMove } from '../engine/ai';
-import { Game } from '../engine/chess';
+import { Game, squareName } from '../engine/chess';
 import { clearSavedGame, saveGame } from '../storage/storage';
-import { SERIF } from '../theme/themes';
+import { tcLabel } from '../data/timeControls';
+import { C, F, radius, shadow } from '../theme/ui';
+
 const other = (c) => (c === 'w' ? 'b' : 'w');
 const START_COUNT = { p: 8, n: 2, b: 2, r: 2, q: 1, k: 1 };
 const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-const initialClocksFor = (config) => config.timeControl ? { w: config.timeControl.minutes * 60000, b: config.timeControl.minutes * 60000 } : null;
-export default function GameScreen({ config, initialMoves, initialClocks, onExit }) {
-    const { theme, settings, update } = useSettings();
-    const { width, height } = useWindowDimensions();
-    // ---- État de la partie -------------------------------------------------
-    const gameRef = useRef(null);
-    if (!gameRef.current) {
-        const g = new Game();
-        initialMoves?.forEach((s) => g.playSan(s));
-        gameRef.current = g;
+const NAME = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
+const REASONS = {
+  checkmate: 'by checkmate',
+  stalemate: 'Stalemate: no legal move, but no check',
+  threefold: 'Same position three times',
+  fifty: '50 moves without a capture or pawn move',
+  material: 'Not enough pieces left to checkmate',
+  timeout: 'on time',
+  resign: 'by resignation',
+};
+
+const initialClocksFor = (config) =>
+  config.timeControl ? { w: config.timeControl.minutes * 60000, b: config.timeControl.minutes * 60000 } : null;
+
+export default function GameScreen({ config, initialMoves, initialClocks, nav }) {
+  const { theme, settings, updateSettings, recordGame } = useApp();
+  const { width, height } = useWindowDimensions();
+
+  // ---- Game state ---------------------------------------------------------
+  const gameRef = useRef(null);
+  if (!gameRef.current) {
+    const g = new Game();
+    initialMoves?.forEach((s) => g.playSan(s));
+    gameRef.current = g;
+  }
+  const game = gameRef.current;
+
+  const [version, setVersion] = useState(0);
+  const bump = () => setVersion((v) => v + 1);
+  const [selected, setSelected] = useState(null);
+  const [pendingPromo, setPendingPromo] = useState(null);
+  const [clocks, setClocks] = useState(initialClocks ?? initialClocksFor(config));
+  const clocksRef = useRef(clocks);
+  clocksRef.current = clocks;
+  const [override, setOverride] = useState(null); // resignation / time out
+  const [thinking, setThinking] = useState(false);
+  const [showEnd, setShowEnd] = useState(false);
+  const [manualFlip, setManualFlip] = useState(false);
+  const recorded = useRef(false);
+
+  const pos = game.pos;
+  const turn = pos.turn;
+  const result = override ?? game.result();
+  const isAi = config.mode === 'ai';
+  const humanTurn = !isAi || turn === config.playerColor;
+
+  let orientation = 'w';
+  if (isAi) orientation = config.playerColor;
+  else if (settings.autoFlip) orientation = turn;
+  else orientation = manualFlip ? 'b' : 'w';
+
+  // ---- Auto-save ----------------------------------------------------------
+  const persist = useCallback(() => {
+    if (result.over || game.history.length === 0) {
+      clearSavedGame();
+      return;
     }
-    const game = gameRef.current;
-    const [version, setVersion] = useState(0);
-    const bump = () => setVersion((v) => v + 1);
-    const [selected, setSelected] = useState(null);
-    const [pendingPromo, setPendingPromo] = useState(null);
-    const [clocks, setClocks] = useState(initialClocks ?? initialClocksFor(config));
-    const clocksRef = useRef(clocks);
-    clocksRef.current = clocks;
-    const [override, setOverride] = useState(null); // abandon / temps écoulé
-    const [thinking, setThinking] = useState(false);
-    const [showEnd, setShowEnd] = useState(false);
-    const [manualFlip, setManualFlip] = useState(false);
-    const pos = game.pos;
-    const turn = pos.turn;
-    const result = override ?? game.result();
-    const isAi = config.mode === 'ai';
-    const humanTurn = !isAi || turn === config.playerColor;
-    // ---- Orientation --------------------------------------------------------
-    let orientation = 'w';
-    if (isAi)
-        orientation = config.playerColor;
-    else if (settings.autoFlip)
-        orientation = turn;
-    else
-        orientation = manualFlip ? 'b' : 'w';
-    // ---- Sauvegarde automatique --------------------------------------------
-    const persist = useCallback(() => {
-        if (result.over || game.history.length === 0) {
-            clearSavedGame();
-            return;
-        }
-        saveGame({ config, moves: game.sanList(), clocks: clocksRef.current, savedAt: Date.now() });
-    }, [config, game, result.over]);
-    useEffect(() => {
-        persist();
-    }, [version, override]); // eslint-disable-line react-hooks/exhaustive-deps
-    useEffect(() => {
-        const sub = AppState.addEventListener('change', (s) => {
-            if (s !== 'active')
-                persist();
-        });
-        return () => sub.remove();
-    }, [persist]);
-    // ---- Pendule ------------------------------------------------------------
-    const clockRunning = !!clocks && game.history.length > 0 && !result.over;
-    useEffect(() => {
-        if (!clockRunning)
-            return;
-        let last = Date.now();
-        const id = setInterval(() => {
-            const now = Date.now();
-            const dt = now - last;
-            last = now;
-            setClocks((c) => (c ? { ...c, [turn]: Math.max(0, c[turn] - dt) } : c));
-        }, 100);
-        return () => clearInterval(id);
-    }, [clockRunning, turn]);
-    useEffect(() => {
-        if (clocks && !result.over && clocks[turn] <= 0) {
-            setOverride({ over: true, winner: other(turn), reason: 'timeout' });
-            setSelected(null);
-            setShowEnd(true);
-        }
-    }, [clocks, turn, result.over]);
-    // ---- Après chaque coup -------------------------------------------------
-    const afterMove = (entry) => {
-        if (settings.haptics) {
-            const style = entry.move.captured ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light;
-            Haptics.impactAsync(style).catch(() => { });
-        }
-        if (config.timeControl && game.history.length > 1) {
-            const inc = config.timeControl.increment * 1000;
-            const mover = entry.move.color;
-            setClocks((c) => (c ? { ...c, [mover]: c[mover] + inc } : c));
-        }
-        setSelected(null);
-        bump();
-        if (game.result().over)
-            setTimeout(() => setShowEnd(true), 450);
+    saveGame({ config, moves: game.sanList(), clocks: clocksRef.current, savedAt: Date.now() });
+  }, [config, game, result.over]);
+
+  useEffect(() => {
+    persist();
+  }, [version, override]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => s !== 'active' && persist());
+    return () => sub.remove();
+  }, [persist]);
+
+  // ---- Record finished games ---------------------------------------------
+  useEffect(() => {
+    if (!result.over || recorded.current) return;
+    recorded.current = true;
+    let r;
+    if (isAi) r = result.winner === null ? 'draw' : result.winner === config.playerColor ? 'win' : 'loss';
+    else r = result.winner === null ? 'draw' : result.winner === 'w' ? 'white' : 'black';
+    recordGame({ result: r, mode: config.mode, level: config.aiLevel, reason: result.reason, moves: Math.ceil(game.history.length / 2) });
+  }, [result.over]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- Clock --------------------------------------------------------------
+  const clockRunning = !!clocks && game.history.length > 0 && !result.over;
+  useEffect(() => {
+    if (!clockRunning) return;
+    let last = Date.now();
+    const id = setInterval(() => {
+      const now = Date.now();
+      const dt = now - last;
+      last = now;
+      setClocks((c) => (c ? { ...c, [turn]: Math.max(0, c[turn] - dt) } : c));
+    }, 100);
+    return () => clearInterval(id);
+  }, [clockRunning, turn]);
+
+  useEffect(() => {
+    if (clocks && !result.over && clocks[turn] <= 0) {
+      setOverride({ over: true, winner: other(turn), reason: 'timeout' });
+      setSelected(null);
+      setShowEnd(true);
+    }
+  }, [clocks, turn, result.over]);
+
+  // ---- After each move ----------------------------------------------------
+  const afterMove = (entry) => {
+    if (settings.haptics) {
+      const style = entry.move.captured ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light;
+      Haptics.impactAsync(style).catch(() => {});
+    }
+    if (config.timeControl && game.history.length > 1) {
+      const inc = config.timeControl.increment * 1000;
+      const mover = entry.move.color;
+      setClocks((c) => (c ? { ...c, [mover]: c[mover] + inc } : c));
+    }
+    setSelected(null);
+    bump();
+    if (game.result().over) setTimeout(() => setShowEnd(true), 450);
+  };
+
+  // ---- Computer's turn ----------------------------------------------------
+  useEffect(() => {
+    if (!isAi || result.over || turn === config.playerColor) return;
+    setThinking(true);
+    const id = setTimeout(() => {
+      const move = findBestMove(game.pos.fen(), config.aiLevel);
+      if (move) afterMove(game.applyMove(move));
+      setThinking(false);
+    }, 350);
+    return () => {
+      clearTimeout(id);
+      setThinking(false);
     };
-    // ---- Tour de l'ordinateur ----------------------------------------------
-    useEffect(() => {
-        if (!isAi || result.over || turn === config.playerColor)
-            return;
-        setThinking(true);
-        const id = setTimeout(() => {
-            const move = findBestMove(game.pos.fen(), config.aiLevel);
-            if (move)
-                afterMove(game.applyMove(move));
-            setThinking(false);
-        }, 350);
-        return () => {
-            clearTimeout(id);
-            setThinking(false);
-        };
-    }, [version, result.over]); // eslint-disable-line react-hooks/exhaustive-deps
-    // ---- Interaction --------------------------------------------------------
-    const targets = useMemo(() => (selected === null ? [] : pos.movesFrom(selected).map((m) => m.to)), [selected, version]);
-    const onSquarePress = (sq) => {
-        if (result.over || thinking || !humanTurn)
-            return;
-        const piece = pos.board[sq];
-        if (selected !== null && targets.includes(sq)) {
-            if (game.isPromotion(selected, sq)) {
-                setPendingPromo({ from: selected, to: sq });
-                return;
-            }
-            const entry = game.play(selected, sq);
-            if (entry)
-                afterMove(entry);
-            return;
-        }
-        if (piece && piece.color === turn && sq !== selected)
-            setSelected(sq);
-        else
-            setSelected(null);
-    };
-    const choosePromotion = (p) => {
-        if (!pendingPromo)
-            return;
-        const entry = game.play(pendingPromo.from, pendingPromo.to, p);
-        setPendingPromo(null);
-        if (entry)
-            afterMove(entry);
-    };
-    const canUndo = !thinking &&
-        game.history.length > 0 &&
-        (!isAi || game.history.length >= (config.playerColor === 'w' ? 1 : 2));
-    const undo = () => {
-        if (!canUndo)
-            return;
-        game.undo();
-        if (isAi && game.pos.turn !== config.playerColor)
-            game.undo();
-        setOverride(null);
-        setShowEnd(false);
-        setSelected(null);
-        bump();
-    };
-    const resign = () => {
-        const loser = isAi ? config.playerColor : turn;
-        Alert.alert('Abandonner ?', 'La partie sera perdue.', [
-            { text: 'Continuer', style: 'cancel' },
-            {
-                text: 'Abandonner',
-                style: 'destructive',
-                onPress: () => {
-                    setOverride({ over: true, winner: other(loser), reason: 'resign' });
-                    setSelected(null);
-                    setShowEnd(true);
-                },
-            },
-        ]);
-    };
-    const replay = () => {
-        gameRef.current = new Game();
-        setClocks(initialClocksFor(config));
-        setOverride(null);
-        setShowEnd(false);
-        setSelected(null);
-        setPendingPromo(null);
-        clearSavedGame();
-        bump();
-    };
-    // ---- Aide aux coups -----------------------------------------------------
-    const hints = settings.showHints;
-    const danger = useMemo(() => {
-        if (!hints || result.over || !humanTurn)
-            return [];
-        const us = turn;
-        const out = [];
-        pos.board.forEach((p, i) => {
-            if (p && p.color === us && p.type !== 'k' && pos.isAttacked(i, other(us)) && !pos.isAttacked(i, us))
-                out.push(i);
-        });
-        return out;
-    }, [hints, version, result.over, humanTurn]); // eslint-disable-line react-hooks/exhaustive-deps
-    const checkSquare = pos.inCheck() ? pos.findKing(turn) : null;
+  }, [version, result.over]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- Interaction --------------------------------------------------------
+  const targets = useMemo(
+    () => (selected === null ? [] : pos.movesFrom(selected).map((m) => m.to)),
+    [selected, version], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const onSquarePress = (sq) => {
+    if (result.over || thinking || !humanTurn) return;
+    const piece = pos.board[sq];
+    if (selected !== null && targets.includes(sq)) {
+      if (game.isPromotion(selected, sq)) {
+        setPendingPromo({ from: selected, to: sq });
+        return;
+      }
+      const entry = game.play(selected, sq);
+      if (entry) afterMove(entry);
+      return;
+    }
+    if (piece && piece.color === turn && sq !== selected) setSelected(sq);
+    else setSelected(null);
+  };
+
+  const choosePromotion = (p) => {
+    if (!pendingPromo) return;
+    const entry = game.play(pendingPromo.from, pendingPromo.to, p);
+    setPendingPromo(null);
+    if (entry) afterMove(entry);
+  };
+
+  const canUndo =
+    !thinking && !override && game.history.length > 0 && (!isAi || game.history.length >= (config.playerColor === 'w' ? 1 : 2));
+
+  const undo = () => {
+    if (!canUndo) return;
+    game.undo();
+    if (isAi && game.pos.turn !== config.playerColor) game.undo();
+    setShowEnd(false);
+    setSelected(null);
+    bump();
+  };
+
+  const resign = () => {
+    const loser = isAi ? config.playerColor : turn;
+    Alert.alert('Resign?', 'You will lose this game.', [
+      { text: 'Keep playing', style: 'cancel' },
+      {
+        text: 'Resign',
+        style: 'destructive',
+        onPress: () => {
+          setOverride({ over: true, winner: other(loser), reason: 'resign' });
+          setSelected(null);
+          setShowEnd(true);
+        },
+      },
+    ]);
+  };
+
+  const replay = () => {
+    gameRef.current = new Game();
+    recorded.current = false;
+    setClocks(initialClocksFor(config));
+    setOverride(null);
+    setShowEnd(false);
+    setSelected(null);
+    setPendingPromo(null);
+    clearSavedGame();
+    bump();
+  };
+
+  // ---- Hints & coach ------------------------------------------------------
+  const hints = settings.showHints;
+  const danger = useMemo(() => {
+    if (!hints || result.over || !humanTurn) return [];
+    const out = [];
+    pos.board.forEach((p, i) => {
+      if (p && p.color === turn && p.type !== 'k' && pos.isAttacked(i, other(turn)) && !pos.isAttacked(i, turn)) out.push(i);
+    });
+    return out;
+  }, [hints, version, result.over, humanTurn]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const coach = useMemo(() => {
+    if (!hints || result.over) return null;
+    if (thinking) return { icon: 'robot-outline', text: 'The computer is thinking…' };
+    if (!humanTurn) return null;
+    const you = isAi ? 'you' : turn === 'w' ? 'White' : 'Black';
+    const your = isAi ? 'your' : turn === 'w' ? "White's" : "Black's";
     const last = game.lastMove();
-    // ---- Pièces capturées ---------------------------------------------------
-    const captured = useMemo(() => {
-        const count = {
-            w: { p: 0, n: 0, b: 0, r: 0, q: 0, k: 0 },
-            b: { p: 0, n: 0, b: 0, r: 0, q: 0, k: 0 },
-        };
-        pos.board.forEach((p) => p && count[p.color][p.type]++);
-        const lost = (c) => {
-            const list = [];
-            ['q', 'r', 'b', 'n', 'p'].forEach((t) => {
-                // Les promotions peuvent donner « plus » que le départ : on borne à 0.
-                for (let i = 0; i < Math.max(0, START_COUNT[t] - count[c][t]); i++)
-                    list.push(t);
-            });
-            return list;
-        };
-        const material = (c) => Object.keys(count[c]).reduce((s, t) => s + VALUE[t] * count[c][t], 0);
-        return { byWhite: lost('b'), byBlack: lost('w'), diff: material('w') - material('b') };
-    }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
-    // ---- Textes -------------------------------------------------------------
-    const nameOf = (c) => {
-        if (isAi)
-            return c === config.playerColor ? 'Vous' : `Ordinateur · ${AI_LEVELS[config.aiLevel].label}`;
-        return c === 'w' ? 'Blancs' : 'Noirs';
+    if (pos.inCheck()) {
+      return { tone: 'red', text: `Check! ${isAi ? 'Your' : your} king is attacked. Move it, block the attack, or capture the attacker.` };
+    }
+    if (last && last.captured && last.color !== turn) {
+      const canRetake = pos.isAttacked(last.to, turn);
+      return canRetake
+        ? { text: `${isAi ? 'The computer' : 'Your opponent'} took ${your} ${NAME[last.captured]}. Good news: ${you} can take back on ${squareName(last.to)}!` }
+        : { tone: 'red', text: `${isAi ? 'The computer' : 'Your opponent'} took ${your} ${NAME[last.captured]} for free. Tip: before each move, check which pieces are undefended.` };
+    }
+    if (danger.length) {
+      const worst = danger.reduce((a, b) => (VALUE[pos.board[b].type] > VALUE[pos.board[a].type] ? b : a));
+      return {
+        tone: 'orange',
+        text: `Careful: ${your} ${NAME[pos.board[worst].type]} on ${squareName(worst)} is attacked and not defended (orange square). Move it or protect it.`,
+      };
+    }
+    if (game.history.length < 2) return { text: 'Tip: start by moving a center pawn (e4 or d4). Tap a piece to see where it can go.' };
+    if (game.history.length < 10) return { text: 'Tip: bring out your knights and bishops, then castle to keep your king safe.' };
+    return null;
+  }, [hints, version, result.over, thinking, humanTurn, danger]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const checkSquare = pos.inCheck() ? pos.findKing(turn) : null;
+  const last = game.lastMove();
+
+  // ---- Captured pieces ----------------------------------------------------
+  const captured = useMemo(() => {
+    const count = { w: { p: 0, n: 0, b: 0, r: 0, q: 0, k: 0 }, b: { p: 0, n: 0, b: 0, r: 0, q: 0, k: 0 } };
+    pos.board.forEach((p) => p && count[p.color][p.type]++);
+    const lost = (c) => {
+      const list = [];
+      ['q', 'r', 'b', 'n', 'p'].forEach((t) => {
+        for (let i = 0; i < Math.max(0, START_COUNT[t] - count[c][t]); i++) list.push(t);
+      });
+      return list;
     };
-    let status = '';
-    if (result.over)
-        status = 'Partie terminée';
-    else if (thinking)
-        status = "L'ordinateur réfléchit…";
-    else if (pos.inCheck())
-        status = `Échec ! ${isAi ? (humanTurn ? 'À vous de jouer' : '') : `Au tour des ${nameOf(turn)}`}`;
-    else
-        status = isAi ? (humanTurn ? 'À vous de jouer' : '') : `Au tour des ${nameOf(turn)}`;
-    const endText = (() => {
-        if (!result.over)
-            return { title: '', subtitle: '' };
-        const reasons = {
-            checkmate: 'Échec et mat',
-            stalemate: 'Pat',
-            threefold: 'Triple répétition',
-            fifty: 'Règle des 50 coups',
-            material: 'Matériel insuffisant',
-            timeout: 'Temps écoulé',
-            resign: 'Abandon',
-        };
-        let title = 'Partie nulle';
-        if (result.winner) {
-            if (isAi)
-                title = result.winner === config.playerColor ? 'Victoire !' : 'Défaite';
-            else
-                title = result.winner === 'w' ? 'Les Blancs gagnent' : 'Les Noirs gagnent';
-        }
-        return { title, subtitle: reasons[result.reason] };
-    })();
-    // ---- Mise en page -------------------------------------------------------
-    const boardSize = Math.floor(Math.min(width - 20, height * 0.56, 560));
-    const top = other(orientation);
-    const bottom = orientation;
-    const moves = game.sanList();
-    return (<View style={{ flex: 1 }}>
-      <Header title={isAi ? 'Contre l’ordinateur' : 'Deux joueurs'} onBack={() => {
-            persist();
-            onExit();
-        }}/>
+    const material = (c) => Object.keys(count[c]).reduce((s, t) => s + VALUE[t] * count[c][t], 0);
+    return { byWhite: lost('b'), byBlack: lost('w'), diff: material('w') - material('b') };
+  }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
 
-      <ScrollView contentContainerStyle={styles.content} bounces={false}>
-        <PlayerBar theme={theme} name={nameOf(top)} color={top} captured={top === 'w' ? captured.byWhite : captured.byBlack} advantage={top === 'w' ? captured.diff : -captured.diff} clock={clocks ? clocks[top] : null} active={!result.over && turn === top} width={boardSize}/>
+  // ---- Texts --------------------------------------------------------------
+  const nameOf = (c) => {
+    if (isAi) return c === config.playerColor ? settings.playerName : 'Computer';
+    return c === 'w' ? 'White' : 'Black';
+  };
+  const subOf = (c) => {
+    if (isAi) return c === config.playerColor ? (c === 'w' ? 'White' : 'Black') : AI_LEVELS[config.aiLevel].label;
+    return 'Friend';
+  };
 
-        <Board board={pos.board} size={boardSize} theme={theme} orientation={orientation} selected={selected} targets={hints ? targets : []} lastMove={last} checkSquare={checkSquare} danger={danger} showCoordinates={settings.showCoordinates} onSquarePress={onSquarePress}/>
+  const endText = (() => {
+    if (!result.over) return { title: '', subtitle: '' };
+    let title = 'Draw';
+    if (result.winner) {
+      if (isAi) title = result.winner === config.playerColor ? 'You won!' : 'You lost';
+      else title = result.winner === 'w' ? 'White wins!' : 'Black wins!';
+    }
+    let subtitle = REASONS[result.reason];
+    if (result.winner && isAi && result.winner !== config.playerColor) subtitle += '. Every game makes you better!';
+    return { title, subtitle };
+  })();
 
-        <PlayerBar theme={theme} name={nameOf(bottom)} color={bottom} captured={bottom === 'w' ? captured.byWhite : captured.byBlack} advantage={bottom === 'w' ? captured.diff : -captured.diff} clock={clocks ? clocks[bottom] : null} active={!result.over && turn === bottom} width={boardSize}/>
+  // ---- Layout -------------------------------------------------------------
+  const boardSize = Math.floor(Math.min(width - 24, height * 0.52, 560));
+  const top = other(orientation);
+  const bottom = orientation;
+  const moves = game.sanList();
 
-        <Text style={[styles.status, { color: pos.inCheck() && !result.over ? theme.danger : theme.textMuted }]}>
-          {status || ' '}
-        </Text>
+  return (
+    <View style={{ flex: 1 }}>
+      <BackHeader
+        title={isAi ? `vs Computer · ${AI_LEVELS[config.aiLevel].label}` : 'Friend game'}
+        onBack={() => {
+          persist();
+          nav.back();
+        }}
+        right={config.timeControl ? <Text style={styles.tc}>{tcLabel(config.timeControl)}</Text> : null}
+      />
 
-        <MoveList moves={moves} theme={theme} width={boardSize}/>
+      <ScrollView contentContainerStyle={styles.content} bounces={false} showsVerticalScrollIndicator={false}>
+        <PlayerBar
+          theme={theme}
+          name={nameOf(top)}
+          sub={subOf(top)}
+          color={top}
+          isComputer={isAi && top !== config.playerColor}
+          captured={top === 'w' ? captured.byWhite : captured.byBlack}
+          advantage={top === 'w' ? captured.diff : -captured.diff}
+          clock={clocks ? clocks[top] : null}
+          active={!result.over && turn === top}
+          width={boardSize}
+        />
+
+        <Board
+          board={pos.board}
+          size={boardSize}
+          theme={theme}
+          orientation={orientation}
+          selected={selected}
+          targets={hints ? targets : []}
+          lastMove={last}
+          checkSquare={checkSquare}
+          danger={danger}
+          showCoordinates={settings.showCoordinates}
+          onSquarePress={onSquarePress}
+        />
+
+        <PlayerBar
+          theme={theme}
+          name={nameOf(bottom)}
+          sub={subOf(bottom)}
+          color={bottom}
+          isComputer={isAi && bottom !== config.playerColor}
+          captured={bottom === 'w' ? captured.byWhite : captured.byBlack}
+          advantage={bottom === 'w' ? captured.diff : -captured.diff}
+          clock={clocks ? clocks[bottom] : null}
+          active={!result.over && turn === bottom}
+          width={boardSize}
+        />
+
+        {coach ? (
+          <View
+            style={[
+              styles.coach,
+              { width: boardSize },
+              coach.tone === 'red' && { backgroundColor: C.dangerBg },
+              coach.tone === 'orange' && { backgroundColor: '#FDEBD5' },
+            ]}
+          >
+            <View style={styles.coachIcon}>
+              <MaterialCommunityIcons name={coach.icon || 'school'} size={20} color={C.goldLight} />
+            </View>
+            <Text style={styles.coachText}>{coach.text}</Text>
+          </View>
+        ) : result.over ? (
+          <Text style={styles.status}>{endText.title} · {endText.subtitle}</Text>
+        ) : !hints && !humanTurn ? (
+          <Text style={styles.status}>The computer is thinking…</Text>
+        ) : null}
+
+        <MoveList moves={moves} width={boardSize} />
 
         <View style={[styles.actions, { width: boardSize }]}>
-          <Action theme={theme} icon="↶" label="Annuler" onPress={undo} disabled={!canUndo}/>
-          <Action theme={theme} icon="💡" label={hints ? 'Aide : oui' : 'Aide : non'} active={hints} onPress={() => update({ showHints: !hints })}/>
-          {!isAi && !settings.autoFlip && (<Action theme={theme} icon="⇅" label="Retourner" onPress={() => setManualFlip((f) => !f)}/>)}
-          {result.over ? (<Action theme={theme} icon="↻" label="Rejouer" onPress={replay}/>) : (<Action theme={theme} icon="⚑" label="Abandon" onPress={resign} disabled={game.history.length === 0}/>)}
+          <Action icon="rotate-ccw" label="Undo" onPress={undo} disabled={!canUndo} />
+          <Action icon="zap" label={hints ? 'Hints on' : 'Hints off'} active={hints} onPress={() => updateSettings({ showHints: !hints })} />
+          {!isAi && !settings.autoFlip && <Action icon="refresh-cw" label="Flip" onPress={() => setManualFlip((f) => !f)} />}
+          {result.over ? (
+            <Action icon="play" label="New game" onPress={replay} />
+          ) : (
+            <Action icon="flag" label="Resign" onPress={resign} disabled={game.history.length === 0} />
+          )}
         </View>
       </ScrollView>
 
-      <PromotionModal visible={!!pendingPromo} color={turn} onChoose={choosePromotion} onCancel={() => setPendingPromo(null)}/>
-      <GameOverModal visible={showEnd && result.over} title={endText.title} subtitle={endText.subtitle} onReplay={replay} onClose={() => setShowEnd(false)} onMenu={onExit}/>
-    </View>);
+      <PromotionModal
+        visible={!!pendingPromo}
+        color={turn}
+        theme={theme}
+        onChoose={choosePromotion}
+        onCancel={() => setPendingPromo(null)}
+      />
+      <GameOverModal
+        visible={showEnd && result.over}
+        title={endText.title}
+        subtitle={endText.subtitle}
+        onReplay={replay}
+        onClose={() => setShowEnd(false)}
+        onMenu={nav.back}
+      />
+    </View>
+  );
 }
+
 /* ------------------------------------------------------------------------ */
+
 function formatClock(ms) {
-    if (ms < 10000)
-        return (Math.ceil(ms / 100) / 10).toFixed(1);
-    const total = Math.ceil(ms / 1000);
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
+  if (ms < 10000) return (Math.ceil(ms / 100) / 10).toFixed(1);
+  const total = Math.ceil(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
-function PlayerBar({ theme, name, color, captured, advantage, clock, active, width, }) {
-    const low = clock !== null && clock < 20000;
-    return (<View style={[styles.player, { width }]}>
-      <View style={[
-            styles.avatar,
-            { backgroundColor: color === 'w' ? theme.whitePiece : theme.blackPiece, borderColor: active ? theme.accent : 'transparent' },
-        ]}/>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.playerName, { color: theme.text }]} numberOfLines={1}>
-          {name}
+
+function PlayerBar({ theme, name, sub, color, isComputer, captured, advantage, clock, active, width }) {
+  const low = clock !== null && clock < 20000;
+  return (
+    <View style={[styles.player, { width }]}>
+      {isComputer ? (
+        <View style={[styles.bot, active && { borderColor: C.gold }]}>
+          <MaterialCommunityIcons name="robot-outline" size={24} color={C.goldLight} />
+        </View>
+      ) : (
+        <Avatar name={name} size={40} ring={active ? C.gold : null} />
+      )}
+      <View style={{ flex: 1, marginLeft: 10 }}>
+        <Text style={styles.playerName} numberOfLines={1}>
+          {name} <Text style={styles.playerSub}>· {sub}</Text>
         </Text>
         <View style={styles.capturedRow}>
-          {captured.map((t, i) => (<View key={i} style={{ marginRight: -7 }}>
-              <Piece type={t} color={other(color)} size={18} theme={theme}/>
-            </View>))}
-          {advantage > 0 && (<Text style={{ color: theme.textMuted, fontSize: 12, marginLeft: 10, fontWeight: '700' }}>+{advantage}</Text>)}
+          {captured.map((t, i) => (
+            <View key={i} style={{ marginRight: -7 }}>
+              <Piece type={t} color={color === 'w' ? 'b' : 'w'} size={18} theme={theme} />
+            </View>
+          ))}
+          {advantage > 0 && <Text style={styles.adv}>+{advantage}</Text>}
         </View>
       </View>
-      {clock !== null && (<View style={[
-                styles.clock,
-                {
-                    backgroundColor: active ? (low ? '#C0392B' : theme.accent) : theme.surface,
-                },
-            ]}>
-          <Text style={[
-                styles.clockText,
-                { color: active ? (low ? '#fff' : theme.accentText) : theme.textMuted },
-            ]}>
-            {formatClock(clock)}
-          </Text>
-        </View>)}
-    </View>);
+      {clock !== null && (
+        <View style={[styles.clock, active && { backgroundColor: low ? C.danger : C.dark }]}>
+          <Text style={[styles.clockText, active && { color: C.onDark }]}>{formatClock(clock)}</Text>
+        </View>
+      )}
+    </View>
+  );
 }
-function MoveList({ moves, theme, width }) {
-    const ref = useRef(null);
-    const pairs = [];
-    for (let i = 0; i < moves.length; i += 2)
-        pairs.push({ n: i / 2 + 1, w: moves[i], b: moves[i + 1] });
-    return (<View style={[styles.moves, { width, backgroundColor: theme.surface }]}>
-      {pairs.length === 0 ? (<Text style={{ color: theme.textMuted, fontSize: 14, paddingHorizontal: 12 }}>Aucun coup joué</Text>) : (<ScrollView ref={ref} horizontal showsHorizontalScrollIndicator={false} onContentSizeChange={() => ref.current?.scrollToEnd({ animated: true })} contentContainerStyle={{ paddingHorizontal: 10, alignItems: 'center' }}>
+
+function MoveList({ moves, width }) {
+  const ref = useRef(null);
+  const pairs = [];
+  for (let i = 0; i < moves.length; i += 2) pairs.push({ n: i / 2 + 1, w: moves[i], b: moves[i + 1] });
+  return (
+    <View style={[styles.moves, { width }]}>
+      {pairs.length === 0 ? (
+        <Text style={styles.noMoves}>No moves yet</Text>
+      ) : (
+        <ScrollView
+          ref={ref}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          onContentSizeChange={() => ref.current?.scrollToEnd({ animated: true })}
+          contentContainerStyle={{ paddingHorizontal: 12, alignItems: 'center' }}
+        >
           {pairs.map((p, idx) => {
-                const isLastPair = idx === pairs.length - 1;
-                return (<View key={p.n} style={styles.pair}>
-                <Text style={[styles.moveNum, { color: theme.textMuted }]}>{p.n}.</Text>
-                <Text style={[
-                        styles.move,
-                        { color: theme.text },
-                        isLastPair && !p.b && { color: theme.accent },
-                    ]}>
-                  {p.w}
-                </Text>
-                {p.b && (<Text style={[styles.move, { color: isLastPair ? theme.accent : theme.text }]}>{p.b}</Text>)}
-              </View>);
-            })}
-        </ScrollView>)}
-    </View>);
+            const lastPair = idx === pairs.length - 1;
+            return (
+              <View key={p.n} style={styles.pair}>
+                <Text style={styles.moveNum}>{p.n}.</Text>
+                <Text style={[styles.move, lastPair && !p.b && styles.moveLast]}>{p.w}</Text>
+                {p.b ? <Text style={[styles.move, lastPair && styles.moveLast]}>{p.b}</Text> : null}
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+    </View>
+  );
 }
-function Action({ theme, icon, label, onPress, disabled, active, }) {
-    return (<Pressable onPress={onPress} disabled={disabled} style={({ pressed }) => [
-            styles.action,
-            {
-                backgroundColor: active ? theme.accent : theme.surface,
-                opacity: disabled ? 0.35 : pressed ? 0.75 : 1,
-            },
-        ]}>
-      <Text style={{ fontSize: 18, color: active ? theme.accentText : theme.text }}>{icon}</Text>
-      <Text style={{ fontSize: 11, fontWeight: '700', color: active ? theme.accentText : theme.text, marginTop: 2 }}>
-        {label}
-      </Text>
-    </Pressable>);
+
+function Action({ icon, label, onPress, disabled, active }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.action,
+        active && { backgroundColor: C.dark },
+        { opacity: disabled ? 0.35 : pressed ? 0.8 : 1 },
+      ]}
+    >
+      <Feather name={icon} size={20} color={active ? C.goldLight : C.ink} />
+      <Text style={[styles.actionText, active && { color: C.onDark }]}>{label}</Text>
+    </Pressable>
+  );
 }
+
 const styles = StyleSheet.create({
-    content: { alignItems: 'center', paddingBottom: 30 },
-    player: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 10 },
-    avatar: { width: 34, height: 34, borderRadius: 9, borderWidth: 2.5 },
-    playerName: { fontSize: 16, fontWeight: '700', fontFamily: SERIF },
-    capturedRow: { flexDirection: 'row', alignItems: 'center', height: 20, marginTop: 1 },
-    clock: { paddingVertical: 7, paddingHorizontal: 12, borderRadius: 10, minWidth: 82, alignItems: 'center' },
-    clockText: { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] },
-    status: { fontSize: 14, fontWeight: '600', marginTop: 2, marginBottom: 8 },
-    moves: { height: 44, borderRadius: 12, justifyContent: 'center' },
-    pair: { flexDirection: 'row', alignItems: 'baseline', marginRight: 14, gap: 6 },
-    moveNum: { fontSize: 13, fontWeight: '600' },
-    move: { fontSize: 15, fontWeight: '700' },
-    actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
-    action: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12 },
+  content: { alignItems: 'center', paddingBottom: 30 },
+  tc: { fontFamily: F.semibold, fontSize: 12, color: C.muted },
+  player: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
+  bot: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: C.dark, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 3, borderColor: 'transparent',
+  },
+  playerName: { fontFamily: F.bold, fontSize: 16, color: C.ink },
+  playerSub: { fontFamily: F.regular, fontSize: 13, color: C.muted },
+  capturedRow: { flexDirection: 'row', alignItems: 'center', height: 20 },
+  adv: { fontFamily: F.bold, fontSize: 12, color: C.muted, marginLeft: 12 },
+  clock: { paddingVertical: 7, paddingHorizontal: 12, borderRadius: 12, minWidth: 84, alignItems: 'center', backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder },
+  clockText: { fontFamily: F.bold, fontSize: 21, color: C.muted, fontVariant: ['tabular-nums'], marginTop: 2 },
+  coach: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: C.goldPale, borderRadius: radius.m, padding: 12, marginBottom: 10, marginTop: 2,
+  },
+  coachIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.dark, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  coachText: { flex: 1, fontFamily: F.medium, fontSize: 14, color: C.ink, lineHeight: 20 },
+  status: { fontFamily: F.semibold, fontSize: 14, color: C.muted, marginBottom: 10, marginTop: 2, textAlign: 'center' },
+  moves: { height: 46, borderRadius: radius.m, justifyContent: 'center', backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder },
+  noMoves: { fontFamily: F.regular, fontSize: 14, color: C.muted, paddingHorizontal: 14 },
+  pair: { flexDirection: 'row', alignItems: 'baseline', marginRight: 14, gap: 6 },
+  moveNum: { fontFamily: F.medium, fontSize: 13, color: C.muted },
+  move: { fontFamily: F.semibold, fontSize: 15, color: C.ink },
+  moveLast: { color: C.goldDeep, fontFamily: F.bold },
+  actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  action: {
+    flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: radius.s, backgroundColor: C.card,
+    borderWidth: 1, borderColor: C.cardBorder, ...shadow, shadowOpacity: 0.08,
+  },
+  actionText: { fontFamily: F.semibold, fontSize: 12, color: C.ink, marginTop: 4 },
 });

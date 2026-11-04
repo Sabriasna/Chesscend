@@ -1,52 +1,69 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export const DEFAULT_SETTINGS = {
-    themeId: 'bois',
-    showHints: true,
-    showCoordinates: true,
-    autoFlip: false,
-    haptics: true,
+  playerName: 'Player',
+  themeId: 'wood',
+  showHints: true,
+  showCoordinates: true,
+  autoFlip: false,
+  haptics: true,
+  preferredLevel: 2,
 };
-const SETTINGS_KEY = 'echecs:settings';
-const GAME_KEY = 'echecs:savedGame';
-export async function loadSettings() {
-    try {
-        const raw = await AsyncStorage.getItem(SETTINGS_KEY);
-        return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
-    }
-    catch {
-        return DEFAULT_SETTINGS;
-    }
+
+export const DEFAULT_STATS = {
+  rating: 800,
+  games: [], // { result: 'win'|'loss'|'draw', mode, level, reason, moves, date }
+};
+
+export const DEFAULT_PROGRESS = {
+  lessonsDone: [],
+  puzzlesSolved: [],
+};
+
+const KEYS = {
+  settings: 'chesscend:settings',
+  game: 'chesscend:savedGame',
+  stats: 'chesscend:stats',
+  progress: 'chesscend:progress',
+};
+
+async function read(key, fallback) {
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+  } catch {
+    return fallback;
+  }
 }
-export async function saveSettings(s) {
-    try {
-        await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
-    }
-    catch {
-        // stockage indisponible : on ignore
-    }
+
+async function write(key, value) {
+  try {
+    await AsyncStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // storage unavailable: ignore
+  }
 }
+
+export const loadSettings = () => read(KEYS.settings, DEFAULT_SETTINGS);
+export const saveSettings = (s) => write(KEYS.settings, s);
+export const loadStats = () => read(KEYS.stats, DEFAULT_STATS);
+export const saveStats = (s) => write(KEYS.stats, s);
+export const loadProgress = () => read(KEYS.progress, DEFAULT_PROGRESS);
+export const saveProgress = (p) => write(KEYS.progress, p);
+
 export async function loadSavedGame() {
-    try {
-        const raw = await AsyncStorage.getItem(GAME_KEY);
-        return raw ? JSON.parse(raw) : null;
-    }
-    catch {
-        return null;
-    }
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.game);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
-export async function saveGame(g) {
-    try {
-        await AsyncStorage.setItem(GAME_KEY, JSON.stringify(g));
-    }
-    catch {
-        // ignore
-    }
-}
+export const saveGame = (g) => write(KEYS.game, g);
 export async function clearSavedGame() {
-    try {
-        await AsyncStorage.removeItem(GAME_KEY);
-    }
-    catch {
-        // ignore
-    }
+  try {
+    await AsyncStorage.removeItem(KEYS.game);
+  } catch {
+    // ignore
+  }
 }

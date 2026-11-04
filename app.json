@@ -4,9 +4,9 @@
     "slug": "chesscend",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
-    "splash": { "backgroundColor": "#24170E", "resizeMode": "contain" },
+    "userInterfaceStyle": "light",
+    "splash": { "backgroundColor": "#FFF6DD", "resizeMode": "contain" },
     "ios": { "supportsTablet": true, "bundleIdentifier": "com.sabriasna.chesscend" },
-    "android": { "package": "com.sabriasna.chesscend", "adaptiveIcon": { "backgroundColor": "#24170E" } }
+    "android": { "package": "com.sabriasna.chesscend", "adaptiveIcon": { "backgroundColor": "#FFF6DD" } }
   }
 }
