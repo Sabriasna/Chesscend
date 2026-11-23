@@ -121,7 +121,7 @@ export default {
   'stats.gamesVsComputer': 'Games vs computer',
 
   // home
-  'home.headline': 'Chess, made simple<br>and beautiful.',
+  'home.headline': 'Play, learn,<br>ascend!',
   'home.lead': 'Play the computer or a friend, learn with short lessons and puzzles, and let a friendly coach explain your mistakes.',
   'home.startLearning': 'Start learning',
   'home.continueGame': 'Continue your game',
