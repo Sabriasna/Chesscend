@@ -120,7 +120,7 @@ export default {
   'stats.thisWeek': 'Esta semana',
   'stats.gamesVsComputer': 'Partidas vs ordenador',
 
-  'home.headline': 'Ajedrez, sencillo<br>y bonito.',
+  'home.headline': '¡Juega, aprende,<br>asciende!',
   'home.lead': 'Juega contra el ordenador o con un amigo, aprende con lecciones cortas y problemas, y deja que un entrenador amable te explique tus errores.',
   'home.startLearning': 'Empezar a aprender',
   'home.continueGame': 'Continuar tu partida',
