@@ -4,9 +4,9 @@
 
 | Élément | Présent ? | Détail |
 |---|---|---|
-| Authentification (comptes) | Non | Aucun compte. Le prénom est un simple réglage local. |
-| Base de données | Non | Tout est dans le navigateur (`localStorage`), une copie par appareil. |
-| Identifiants utilisateurs persistants | Non | Rien ne relie deux appareils ni deux visiteurs. |
+| Authentification (comptes) | Oui (nov. 2026) | Supabase Auth : e-mail + mot de passe, pseudo unique. |
+| Base de données | Oui | Supabase (Irlande) : `profiles` et `user_data`, protégées par RLS (`supabase/schema.sql`). |
+| Identifiants utilisateurs persistants | Oui | L'identifiant du compte relie les appareils d'un même joueur. |
 | Backend / serveur | Non | GitHub Pages ne sert que des fichiers statiques. |
 | Multijoueur en ligne | Non | Seulement « contre l'ordinateur » et « à deux sur le même appareil ». |
 | Validation des résultats | Non | Un résultat enregistré dans le navigateur peut être modifié par son utilisateur. |

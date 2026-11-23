@@ -14,6 +14,99 @@ HOST = 'http://chesscend.test'
 SITE = f'{HOST}/Chesscend/web/'
 CHROME = '/usr/bin/google-chrome'
 results = []
+SUPA = 'https://umisavpcofubvegdmglc.supabase.co'
+
+
+class FakeSupabase:
+    """A small stand-in for Supabase Auth + database (same requests and answers), with the
+    same rule as the real database: each user reaches only their own rows."""
+
+    def __init__(self, confirm_email=False):
+        self.confirm_email = confirm_email
+        self.users = {}      # email -> {id, password, username, confirmed}
+        self.tokens = {}     # access or refresh token -> user id
+        self.data = {}       # user id -> {settings, stats, progress}
+        self.n = 0
+
+    def _session(self, u):
+        self.n += 1
+        at, rt = f'at{self.n}', f'rt{self.n}'
+        self.tokens[at] = u['id']
+        self.tokens[rt] = u['id']
+        return {'access_token': at, 'refresh_token': rt, 'expires_in': 3600, 'token_type': 'bearer',
+                'user': {'id': u['id'], 'email': u['email']}}
+
+    def _user_by_id(self, uid):
+        return next((u for u in self.users.values() if u['id'] == uid), None)
+
+    async def handle(self, route):
+        req = route.request
+        cors = {'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*',
+                'content-type': 'application/json'}
+        if req.method == 'OPTIONS':
+            return await route.fulfill(status=204, headers=cors)
+        path = req.url[len(SUPA):]
+        body = json.loads(req.post_data) if req.post_data else {}
+        token = (req.headers.get('authorization') or '').replace('Bearer ', '')
+        uid = self.tokens.get(token)
+
+        def out(status, payload=None):
+            return route.fulfill(status=status, headers=cors, body=json.dumps(payload) if payload is not None else '')
+
+        if path.startswith('/auth/v1/signup'):
+            if body['email'] in self.users:
+                return await out(422, {'error_code': 'user_already_exists', 'msg': 'User already registered'})
+            if len(body['password']) < 8:
+                return await out(422, {'error_code': 'weak_password', 'msg': 'Password should be at least 8 characters'})
+            u = {'id': f'user-{len(self.users) + 1}', 'email': body['email'], 'password': body['password'],
+                 'username': body['data']['username'], 'confirmed': not self.confirm_email}
+            self.users[u['email']] = u
+            self.data[u['id']] = {'settings': {}, 'stats': {}, 'progress': {}}
+            return await out(200, self._session(u) if u['confirmed'] else {'id': u['id'], 'email': u['email']})
+        if path.startswith('/auth/v1/token?grant_type=password'):
+            u = self.users.get(body.get('email'))
+            if not u or u['password'] != body.get('password'):
+                return await out(400, {'error_code': 'invalid_credentials', 'msg': 'Invalid login credentials'})
+            if not u['confirmed']:
+                return await out(400, {'error_code': 'email_not_confirmed', 'msg': 'Email not confirmed'})
+            return await out(200, self._session(u))
+        if path.startswith('/auth/v1/token?grant_type=refresh_token'):
+            u = self._user_by_id(self.tokens.get(body.get('refresh_token')))
+            return await (out(200, self._session(u)) if u else out(400, {'error_code': 'refresh_token_not_found'}))
+        if path.startswith('/auth/v1/logout'):
+            return await out(204)
+        if path.startswith('/auth/v1/recover') or path.startswith('/auth/v1/resend'):
+            return await out(200, {})
+        if path == '/auth/v1/user':
+            u = self._user_by_id(uid)
+            if not u:
+                return await out(401, {'error_code': 'bad_jwt'})
+            if req.method == 'PUT':
+                u['password'] = body['password']
+            return await out(200, {'id': u['id'], 'email': u['email']})
+        if path == '/rest/v1/rpc/username_available':
+            free = all(u['username'].lower() != body['name'].lower() for u in self.users.values())
+            return await out(200, free)
+        if path == '/rest/v1/rpc/delete_my_account':
+            u = self._user_by_id(uid)
+            if not u:
+                return await out(401, {'message': 'not signed in'})
+            del self.users[u['email']]
+            self.data.pop(u['id'], None)
+            return await out(204)
+        if path.startswith('/rest/v1/profiles'):
+            row_id = path.split('id=eq.')[1]
+            u = self._user_by_id(row_id)
+            return await out(200, [{'username': u['username']}] if u and row_id == uid else [])
+        if path.startswith('/rest/v1/user_data'):
+            if req.method == 'GET':
+                row_id = path.split('user_id=eq.')[1]
+                return await out(200, [self.data[row_id]] if row_id == uid and row_id in self.data else [])
+            if body.get('user_id') != uid:
+                return await out(403, {'message': 'new row violates row-level security policy'})
+            self.data[uid] = {k: body[k] for k in ('settings', 'stats', 'progress')}
+            return await out(201)
+        return await out(404, {'message': 'not found'})
 
 
 async def serve(route):
@@ -38,9 +131,11 @@ def check(name, ok, detail=''):
     print(('PASS ' if ok else 'FAIL ') + name + (f'  ({detail})' if detail and not ok else ''))
 
 
-async def new_page(browser, width=1280, height=900, touch=False, storage=None):
+async def new_page(browser, width=1280, height=900, touch=False, storage=None, supabase=None):
     ctx = await browser.new_context(viewport={'width': width, 'height': height}, has_touch=touch)
     await ctx.route('**/*', serve)
+    if supabase:
+        await ctx.route(SUPA + '/**', supabase.handle)
     if storage is not None:
         await ctx.add_init_script(f"if (!sessionStorage.getItem('seeded')) {{ localStorage.clear(); "
                                   f"Object.entries({json.dumps(storage)}).forEach(([k, v]) => localStorage.setItem(k, v)); sessionStorage.setItem('seeded', '1'); }}")
@@ -81,7 +176,7 @@ LONG_GAME = ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5', 'c3', 'Nf6', 'd3', 'd6', 'O
 
 
 async def test_pages_and_responsive(browser, lang='en', sizes=None):
-    routes = ['home', 'play', 'ranking', 'community', 'learn', 'setup', 'setup-friend', 'profile', 'course-basics', 'lesson-b5', 'puzzle-p2', 'puzzles', 'legal']
+    routes = ['home', 'play', 'ranking', 'community', 'learn', 'setup', 'setup-friend', 'profile', 'course-basics', 'lesson-b5', 'puzzle-p2', 'puzzles', 'legal', 'account', 'reset-password']
     sizes = sizes or [(320, 568, True), (375, 667, True), (390, 844, True), (430, 932, True), (768, 1024, True), (1024, 768, False), (1280, 800, False), (1920, 1080, False)]
     for w, h, touch in sizes:
         long_game = {'config': {'mode': 'ai', 'aiLevel': 2, 'playerColor': 'w', 'timeControl': {'minutes': 10, 'increment': 0}},
@@ -240,7 +335,7 @@ async def test_rankings_and_learning(browser):
     check('no fake players in Global', await pg.locator('.lb-list').count() == 0)
     await pg.click('[data-act="rtab"][data-arg="friends"]')
     await pg.wait_for_timeout(200)
-    check('Friends tab opens', 'Friends arrive with player accounts' in await pg.inner_text('.rank-body'))
+    check('Friends tab opens', 'Friends arrive with online play' in await pg.inner_text('.rank-body'))
     await pg.click('[data-act="rtab"][data-arg="me"]')
     await pg.wait_for_timeout(200)
     t = await pg.inner_text('.rank-body')
@@ -352,6 +447,110 @@ async def test_languages(browser):
     await ctx.close()
 
 
+async def test_accounts(browser):
+    fake = FakeSupabase()
+    played = {'rating': 832, 'games': [
+        {'result': 'win', 'mode': 'ai', 'level': 2, 'reason': 'checkmate', 'moves': 30, 'change': 16, 'date': 2000, 'rated': True, 'ratingAfter': 832},
+        {'result': 'win', 'mode': 'ai', 'level': 2, 'reason': 'resign', 'moves': 25, 'change': 16, 'date': 1000, 'rated': True, 'ratingAfter': 816}]}
+    seed = {'chesscend:version': '2', 'chesscend:stats': json.dumps(played), 'chesscend:progress': json.dumps({'lessonsDone': ['b1'], 'puzzlesSolved': []})}
+    ctx, pg = await new_page(browser, 390, 844, True, storage=seed, supabase=fake)
+    await pg.goto(SITE + '#profile')
+    check('Profile offers to create an account', await pg.locator('text=Save your progress').is_visible())
+    await pg.click('.account-teaser [data-go="account"]')
+    await pg.click('[data-act="view"][data-arg="signup"]')
+    await pg.fill('#username', 'Djam')
+    await pg.fill('#email', 'djam@example.com')
+    await pg.fill('#password', 'short')
+    await pg.click('#consent')
+    await pg.click('form[data-form="signup"] button[type="submit"]')
+    check('signup refuses a short password', 'at least 8 characters' in await pg.inner_text('.form-error'))
+    await pg.fill('#password', 'chess-1234')
+    await pg.click('form[data-form="signup"] button[type="submit"]')
+    await pg.wait_for_timeout(700)
+    page_text = await pg.inner_text('main')
+    check('account created and signed in', 'Djam' in page_text and 'djam@example.com' in page_text, page_text[:200])
+    check('games played before signing up are now in the account', len(fake.data['user-1']['stats'].get('games', [])) == 2 and fake.data['user-1']['progress']['lessonsDone'] == ['b1'])
+    check('sync status shown', 'Saved in your account' in page_text)
+    # a new game result is uploaded automatically
+    await pg.evaluate("localStorage.setItem('x', '1')")
+    await pg.goto(SITE + '#lesson-b2')
+    await pg.click('[data-act="finish"]')
+    await pg.wait_for_timeout(2200)
+    check('progress is uploaded automatically after a change', 'b2' in fake.data['user-1']['progress']['lessonsDone'])
+    # log out: the device goes back to guest
+    await pg.goto(SITE + '#account')
+    await pg.click('[data-act="logout"]')
+    await pg.wait_for_timeout(500)
+    stats = json.loads(await pg.evaluate("localStorage.getItem('chesscend:stats')"))
+    check('logging out leaves the device as a guest, data stays in the account', stats['games'] == [] and 'user-1' in fake.data)
+    await ctx.close()
+
+    # another device: log in and find everything
+    ctx, pg = await new_page(browser, 1280, 800, storage={}, supabase=fake)
+    await pg.goto(SITE + '#account')
+    await pg.fill('#email', 'djam@example.com')
+    await pg.fill('#password', 'wrong-password')
+    await pg.click('form[data-form="login"] button[type="submit"]')
+    await pg.wait_for_timeout(300)
+    check('wrong password gives a clear message', 'Wrong email or password' in await pg.inner_text('.form-error'))
+    await pg.fill('#password', 'chess-1234')
+    await pg.click('form[data-form="login"] button[type="submit"]')
+    await pg.wait_for_timeout(700)
+    await pg.goto(SITE + '#ranking')
+    await pg.wait_for_timeout(300)
+    t = await pg.inner_text('.rank-body')
+    check('on another device the history and rating come back', '832' in t and 'Recent Games' in t and 'Win' in t, t[:200])
+    check('header shows the player initial', (await pg.inner_text('.avatar-desk')).strip() == 'D')
+    # username already taken
+    await pg.goto(SITE + '#account')
+    await pg.click('[data-act="logout"]')
+    await pg.wait_for_timeout(400)
+    await pg.goto(SITE + '#account')
+    await pg.click('[data-act="view"][data-arg="signup"]')
+    await pg.fill('#username', 'djam')
+    await pg.fill('#email', 'other@example.com')
+    await pg.fill('#password', 'another-123')
+    await pg.click('#consent')
+    await pg.click('form[data-form="signup"] button[type="submit"]')
+    await pg.wait_for_timeout(300)
+    check('a username already taken is refused', 'already taken' in await pg.inner_text('.form-error'))
+    await ctx.close()
+
+    # password reset link from the e-mail
+    ctx, pg = await new_page(browser, 1280, 800, storage={}, supabase=fake)
+    fake.tokens['mailtok'] = 'user-1'
+    await pg.goto(SITE + '#access_token=mailtok&expires_in=3600&refresh_token=mailref&token_type=bearer&type=recovery')
+    await pg.wait_for_timeout(600)
+    check('reset link opens the new password page', 'New password' in await pg.inner_text('main'))
+    await pg.fill('#password', 'brand-new-pass')
+    await pg.click('form[data-form="reset"] button[type="submit"]')
+    await pg.wait_for_timeout(500)
+    check('new password saved', fake.users['djam@example.com']['password'] == 'brand-new-pass')
+    check('no tokens left in the address bar', 'access_token' not in pg.url, pg.url)
+    # delete the account
+    await pg.goto(SITE + '#account')
+    await pg.click('[data-act="delete"]')
+    await pg.click('[data-m="yes"]')
+    await pg.wait_for_timeout(500)
+    check('account deleted, with its data', 'djam@example.com' not in fake.users and 'user-1' not in fake.data)
+    check('no errors during the account tests', not pg.errors, pg.errors[:3])
+    await ctx.close()
+
+    # projects that require e-mail confirmation
+    fake2 = FakeSupabase(confirm_email=True)
+    ctx, pg = await new_page(browser, 390, 844, True, storage={'chesscend:settings': json.dumps({'lang': 'fr'})}, supabase=fake2)
+    await pg.goto(SITE + '#account')
+    await pg.click('[data-act="view"][data-arg="signup"]')
+    await pg.fill('#username', 'Sam')
+    await pg.fill('#email', 'sam@example.com')
+    await pg.fill('#password', 'sam-12345')
+    await pg.click('#consent')
+    await pg.click('form[data-form="signup"] button[type="submit"]')
+    await pg.wait_for_timeout(500)
+    check('with e-mail confirmation: "check your inbox" (in French)', 'Regarde ta boîte mail' in await pg.inner_text('main'))
+    await ctx.close()
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(executable_path=CHROME)
@@ -360,7 +559,7 @@ async def main():
                 await test_pages_and_responsive(browser, lang, [(320, 568, True), (390, 844, True), (768, 1024, True), (1280, 800, False)])
             except Exception as e:
                 check(f'responsive {lang}', False, repr(e)[:300])
-        for t in [test_languages, test_pages_and_responsive, test_undo_restores_clocks, test_pause_when_hidden, test_timeout_and_stats,
+        for t in [test_accounts, test_languages, test_pages_and_responsive, test_undo_restores_clocks, test_pause_when_hidden, test_timeout_and_stats,
                   test_unrated_after_undo, test_keyboard_and_resign, test_rankings_and_learning, test_storage_problems,
                   test_github_pages_paths, test_privacy_and_legal]:
             try:

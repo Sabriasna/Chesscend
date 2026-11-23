@@ -7,6 +7,10 @@ import * as P from './pages.js';
 import { QUICK } from '../../src/data/timeControls.js';
 import { gamePage } from './game.js';
 import { lessonPage, puzzlePage } from './boards.js';
+import { accountPage, resetPasswordPage } from './account.js';
+import { handleEmailRedirect, isSignedIn } from './auth.js';
+import { startSync, syncNow } from './sync.js';
+import { toast } from './ui.js';
 
 const app = document.getElementById('app');
 let current = null; // page currently shown
@@ -90,6 +94,8 @@ function route(name) {
   if (name === 'setup-friend') return P.setupPage('local');
   if (name === 'profile') return P.profilePage();
   if (name === 'legal') return P.legalPage();
+  if (name === 'account') return accountPage();
+  if (name === 'reset-password') return resetPasswordPage();
   if (name.startsWith('course-')) return P.coursePage(name.slice(7));
   if (name.startsWith('lesson-')) return lessonPage(name.slice(7));
   if (name === 'puzzles') return puzzlePage(null);
@@ -140,7 +146,7 @@ const footer = () => `<footer class="footer"><div class="footer-in">
   <div class="footer-links">${TABS.map((tab) => `<a href="#${tab.key}">${tabLabel(tab.key)}</a>`).join('')}<a href="#profile">${t('footer.settings')}</a><a href="#legal">${t('legal.title')}</a></div>
   <div class="footer-app">${icon('smartphone', 20)}<span>${t('footer.app')}</span></div>
   <div class="footer-lang" role="group" aria-label="${t('lang.title')}">${icon('globe', 16)}${LANGS.map((l) => `<button class="${l.code === lang() ? 'on' : ''}" lang="${l.code}" aria-pressed="${l.code === lang()}" data-act="set-lang" data-arg="${l.code}">${l.name}</button>`).join('')}</div>
-</div><p class="copy">© ${new Date().getFullYear()} Chesscend · <a class="text-link" href="#legal">${t('legal.title')}</a> · ${t('footer.local')}${isPersistent() ? '' : ` <b>${t('footer.blocked')}</b>`}</p></footer>`;
+</div><p class="copy">© ${new Date().getFullYear()} Chesscend · <a class="text-link" href="#legal">${t('legal.title')}</a> · ${t(isSignedIn() ? 'footer.synced' : 'footer.local')}${isPersistent() ? '' : ` <b>${t('footer.blocked')}</b>`}</p></footer>`;
 
 function render(keepScroll = false) {
   const name = location.hash.slice(1) || 'home';
@@ -190,4 +196,24 @@ app.addEventListener('click', (e) => {
 });
 
 window.addEventListener('hashchange', () => render());
+
+// Coming back from a link in an e-mail (account confirmed, or password reset)?
+const emailHash = location.hash;
+const fromEmail = /(^|[#&])(access_token|error_code|error)=/.test(emailHash);
+if (fromEmail) history.replaceState(null, '', location.pathname + location.search + '#home');
 render();
+startSync();
+if (fromEmail) {
+  handleEmailRedirect(emailHash).then((r) => {
+    if (!r) return;
+    if (r.error) {
+      toast(t(r.error === 'otp_expired' ? 'auth.linkExpired' : 'auth.err.session'), 7000);
+      nav.go('account');
+    } else if (r.type === 'recovery') nav.go('reset-password');
+    else {
+      syncNow();
+      toast(t('auth.confirmed'), 6000);
+      nav.go('account');
+    }
+  });
+}

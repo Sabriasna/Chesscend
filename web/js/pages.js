@@ -12,6 +12,8 @@ import {
   LANGS, courseText, displayName, formatDate, lang, lessonText, levelName, puzzleText, reasonName, t, tcName, themeName,
 } from './i18n.js';
 import { LEGAL } from './lang/legal.js';
+import { accountCard } from './account.js';
+import { isSignedIn } from './auth.js';
 import { ALL_LESSONS, COURSES } from '../../src/data/lessons.js';
 import { PUZZLES } from '../../src/data/puzzles.js';
 import { QUICK, TIME_CONTROLS } from '../../src/data/timeControls.js';
@@ -533,6 +535,7 @@ export function profilePage() {
     title: t('profile.title'),
     sub: t('profile.title'),
     html: `<div class="narrow">
+      ${accountCard()}
       <div class="profile-top">${avatar(displayName(s.playerName), 88, 'var(--gold)')}<h1 class="page-title desk-only">${t('profile.title')}</h1></div>
       <p class="label" id="lbl-name">${t('profile.name')}</p>
       <input class="input" id="name" maxlength="20" placeholder="${t('profile.namePlaceholder')}" value="${s.playerName === 'Player' ? '' : esc(s.playerName)}" autocomplete="off" aria-labelledby="lbl-name">
@@ -545,7 +548,7 @@ export function profilePage() {
         (k) => `<label class="toggle-row"><span class="grow"><strong class="h3">${t(`profile.${k}`)}</strong><span class="small">${t(`profile.${k}.help`)}</span></span>
           <input type="checkbox" class="switch" data-key="${k}" ${s[k] ? 'checked' : ''}></label>`,
       ).join('')}</div>
-      <p class="small center mt-l">${icon('info', 13)} ${t('profile.localNote')}</p>
+      <p class="small center mt-l">${icon('info', 13)} ${t(isSignedIn() ? 'auth.syncedNote' : 'profile.localNote')}</p>
     </div>`,
     mount(el) {
       const input = el.querySelector('#name');
@@ -589,6 +592,9 @@ function legalBlock(code) {
     <p class="body">${L.data1}</p>
     <p class="body">${L.data2}</p>
     <p class="body">${L.data3.replace('{link}', link(GH_PRIVACY(code), L.ghPrivacy))}</p>
+    <h2 class="h3">${L.accountTitle}</h2>
+    <p class="body">${L.account1}</p>
+    <p class="body">${L.account2}</p>
     <h2 class="h3">${L.ipTitle}</h2>
     <p class="body">${L.ip}</p>
   </div>`;

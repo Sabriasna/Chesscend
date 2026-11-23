@@ -80,3 +80,10 @@ Le classement mondial et le classement entre amis ont besoin d'un serveur, qui n
 - Le site est en **anglais par défaut**, avec le **français** et l'**espagnol** au choix : bouton de langue en haut (globe), dans Profil et en bas de page. Le choix est mémorisé. Lien direct : ajouter `?lang=fr` ou `?lang=es` à l'adresse.
 - Textes de l'interface : `web/js/lang/en.js` (référence), `fr.js`, `es.js`. Leçons et puzzles : `web/js/lang/content-fr.js` et `content-es.js`. Mentions légales : `web/js/lang/legal.js`.
 - Pour changer un texte, modifier la même clé dans les trois fichiers. Le test `tests/i18n.test.mjs` signale toute traduction manquante.
+
+### Comptes joueurs (Supabase)
+
+- Le site se connecte au projet Supabase **Chesscend** (adresse et clé publique dans `web/js/config.js`). La clé « publishable » est publique par conception ; la clé « secret » ne doit jamais être mise dans le code.
+- La base (tables, règles de sécurité, création du profil, suppression du compte) est dans `supabase/schema.sql`, à exécuter une fois dans Supabase > SQL Editor.
+- Ce qui est synchronisé : réglages, historique des parties, classement ordi, leçons et puzzles. La partie en cours reste sur l'appareil.
+- E-mails : sans serveur d'envoi personnalisé (SMTP), Supabase n'envoie des e-mails qu'aux membres de l'équipe du projet, 2 par heure maximum. Pour ouvrir les comptes au public : désactiver « Confirm email » ou configurer un SMTP (Authentication > Emails > SMTP Settings).

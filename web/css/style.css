@@ -672,3 +672,40 @@ button.card:active, .tile:active { transform: scale(0.985); }
   .player .elo { white-space: normal; }
   .resume .small { overflow-wrap: anywhere; }
 }
+
+/* accounts */
+.lead-small { color: var(--ink-soft); font-size: 15.5px; line-height: 1.55; margin: 0 0 18px; }
+.auth-wrap { max-width: 520px; margin-left: auto; margin-right: auto; }
+.auth-form { display: flex; flex-direction: column; gap: 14px; padding: 22px; }
+.auth-form .h3 { font-size: 19px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field-label { font-weight: 600; font-size: 14px; }
+.field-help { margin-top: -8px; }
+.form-error { background: var(--danger-bg); color: var(--danger); border-radius: 12px; padding: 10px 12px; font-weight: 600; font-size: 14px; line-height: 1.45; }
+.form-error::before { content: '⚠ '; }
+.check-row { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.5; color: var(--ink-soft); cursor: pointer; }
+.check-row input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: #111; flex: none; }
+.center-link { align-self: center; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 3px; padding: 6px; }
+.is-busy { opacity: .7; pointer-events: none; }
+.auth-perks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 720px; margin: 22px auto 0; }
+.auth-perks > div { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--ink-soft); line-height: 1.4; }
+.auth-perks .ic { color: var(--gold-text); }
+.account-card { display: flex; flex-direction: column; gap: 16px; padding: 20px; }
+.account-head { display: flex; align-items: center; gap: 16px; }
+.account-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.sync-line { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.sync-synced { color: var(--success); }
+.sync-offline, .sync-error { color: var(--danger); }
+.sync-syncing .ic { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.danger-card { border-color: rgba(200, 53, 43, .25); display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.danger-btn { background: var(--danger); color: #fff; }
+.danger-btn:hover { background: #a92a21; }
+.danger-ic { background: var(--danger-bg); color: var(--danger); }
+.account-teaser { margin: 6px 0 4px; }
+@media (max-width: 760px) {
+  .auth-perks { grid-template-columns: 1fr; }
+  .auth-form { padding: 18px 16px; }
+  .account-teaser { flex-wrap: wrap; }
+  .account-teaser .pill { width: 100%; }
+}

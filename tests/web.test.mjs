@@ -174,7 +174,7 @@ test('no online service: rankings say so, without fake players', async () => {
   const html = leaderboardView('global', res);
   assert.match(html, /not live yet/);
   assert.doesNotMatch(html, /lb-list/);
-  assert.match(leaderboardView('friends', await loadLeaderboard('friends')), /Friends arrive with player accounts/);
+  assert.match(leaderboardView('friends', await loadLeaderboard('friends')), /Friends arrive with online play/);
 });
 
 const fixture = (over) => ({

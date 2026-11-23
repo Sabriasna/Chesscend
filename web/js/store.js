@@ -80,7 +80,14 @@ function parse(key) {
     return { ok: false, value: null };
   }
 }
-const write = (key, value) => writeRaw(key, JSON.stringify(value));
+const write = (key, value) => {
+  const ok = writeRaw(key, JSON.stringify(value));
+  if (key !== KEYS.game && key !== KEYS.version) changeListeners.forEach((fn) => fn(key));
+  return ok;
+};
+const changeListeners = new Set();
+/** Calls fn(key) after the settings, statistics or progress change (used to sync the account). */
+export const onDataChange = (fn) => (changeListeners.add(fn), () => changeListeners.delete(fn));
 
 /* ---------------------------------------------------------------- validation */
 
@@ -260,4 +267,23 @@ export function ratingHistory(stats = state.stats) {
   if (!ai.length) return [];
   const first = ai[0].ratingAfter - (ai[0].rated ? ai[0].change : 0);
   return [first, ...ai.map((g) => g.ratingAfter)];
+}
+
+/** Everything that is synced with the player's account. */
+export const accountData = () => ({ settings: state.settings, stats: state.stats, progress: state.progress });
+
+/** Replaces the local data (after merging with the account). Does not trigger a new upload. */
+export function replaceData({ settings, stats, progress }) {
+  state.settings = cleanSettings(settings);
+  state.stats = cleanStats(stats);
+  state.progress = cleanProgress(progress);
+  writeRaw(KEYS.settings, JSON.stringify(state.settings));
+  writeRaw(KEYS.stats, JSON.stringify(state.stats));
+  writeRaw(KEYS.progress, JSON.stringify(state.progress));
+}
+
+/** After logging out: this device goes back to a fresh guest profile (the data stays in the account). */
+export function resetToGuest() {
+  replaceData({ settings: { ...state.settings, playerName: 'Player' }, stats: null, progress: null });
+  clearSavedGame();
 }
