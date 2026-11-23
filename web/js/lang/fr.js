@@ -118,7 +118,7 @@ export default {
   'stats.thisWeek': 'Cette semaine',
   'stats.gamesVsComputer': "Parties contre l'ordi",
 
-  'home.headline': 'Les échecs, simples<br>et beaux.',
+  'home.headline': 'Joue, apprends,<br>progresse&nbsp;!',
   'home.lead': "Joue contre l'ordinateur ou un ami, apprends avec de courtes leçons et des puzzles, et laisse un coach bienveillant t'expliquer tes erreurs.",
   'home.startLearning': 'Commencer à apprendre',
   'home.continueGame': 'Reprendre ta partie',
