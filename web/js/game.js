@@ -3,24 +3,15 @@ import { icon } from './icons.js';
 import { avatar, bindBoard, boardHTML, esc, openModal, piece, pill, toast } from './ui.js';
 import { clearSavedGame, discardBrokenGame, recordGame, saveGame, state, theme, updateSettings } from './store.js';
 import { nav } from './app.js';
-import { AI_LEVELS, findBestMove } from '../../src/engine/ai.js';
+import { findBestMove } from '../../src/engine/ai.js';
 import { Game } from '../../src/engine/chess.js';
 import { coachMessage, findThreats } from '../../src/engine/coach.js';
-import { tcLabel } from '../../src/data/timeControls.js';
+import { coachText, colorName, displayName, levelName, pieceName, t as tr, tcName } from './i18n.js';
 import { timeoutResult } from './rules.js';
 
 const other = (c) => (c === 'w' ? 'b' : 'w');
 const START_COUNT = { p: 8, n: 2, b: 2, r: 2, q: 1, k: 1 };
 const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
-const REASONS = {
-  checkmate: 'by checkmate',
-  stalemate: 'Stalemate: no legal move, but no check',
-  threefold: 'Same position three times',
-  fifty: '50 moves without a capture or pawn move',
-  material: 'Not enough pieces left to checkmate',
-  timeout: 'on time',
-  resign: 'by resignation',
-};
 
 const initialClocksFor = (config) =>
   config.timeControl ? { w: config.timeControl.minutes * 60000, b: config.timeControl.minutes * 60000 } : null;
@@ -139,14 +130,14 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
 
   function endText() {
     const r = result();
-    let title = 'Draw';
+    let title = tr('end.draw');
     if (r.winner) {
-      if (isAi) title = r.winner === config.playerColor ? 'You won!' : 'You lost';
-      else title = r.winner === 'w' ? 'White wins!' : 'Black wins!';
+      if (isAi) title = tr(r.winner === config.playerColor ? 'end.youWon' : 'end.youLost');
+      else title = tr(r.winner === 'w' ? 'end.whiteWins' : 'end.blackWins');
     }
-    let subtitle = REASONS[r.reason];
-    if (r.reason === 'timeout' && !r.winner) subtitle = 'Time ran out, but the other side has only a king left and cannot win';
-    if (r.winner && isAi && r.winner !== config.playerColor) subtitle += '. Every game makes you better!';
+    let subtitle = tr(`end.reason.${r.reason}`);
+    if (r.reason === 'timeout' && !r.winner) subtitle = tr('end.timeoutDraw');
+    if (r.winner && isAi && r.winner !== config.playerColor) subtitle = tr('end.encourage', { reason: subtitle });
     return { title, subtitle };
   }
 
@@ -157,15 +148,15 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
     const ratingLine = !isAi
       ? ''
       : assisted
-        ? '<p class="sheet-note">Unrated game: a move was taken back, so your Computer Rating did not change.</p>'
+        ? `<p class="sheet-note">${tr('end.unrated')}</p>`
         : last && last.mode === 'ai'
-          ? `<p class="sheet-note">Computer Rating: <b>${last.ratingAfter}</b> (${last.change >= 0 ? '+' : ''}${last.change})</p>`
+          ? `<p class="sheet-note">${tr('rating.computer')}: <b>${last.ratingAfter}</b> (${last.change >= 0 ? '+' : ''}${last.change})</p>`
           : '';
     const m = openModal(`<div class="sheet-icon">${icon('trophy', 40)}</div><h3 class="big">${t.title}</h3><p>${t.subtitle}</p>${ratingLine}
       <div class="sheet-actions">
-        ${pill('Play again', { icon: 'rotate-cw', attrs: 'data-m="replay"' })}
-        ${pill('View the board', { variant: 'light', size: 'm', attrs: 'data-m="close"' })}
-        ${pill('Back to home', { variant: 'light', size: 'm', attrs: 'data-m="home"' })}
+        ${pill(tr('end.playAgain'), { icon: 'rotate-cw', attrs: 'data-m="replay"' })}
+        ${pill(tr('end.viewBoard'), { variant: 'light', size: 'm', attrs: 'data-m="close"' })}
+        ${pill(tr('end.backHome'), { variant: 'light', size: 'm', attrs: 'data-m="home"' })}
       </div>`);
     m.el.querySelector('[data-m="replay"]').onclick = () => (m.close(), replay());
     m.el.querySelector('[data-m="close"]').onclick = m.close;
@@ -284,9 +275,8 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
   function askPromotion(from, to) {
     const t = theme();
     const color = turn();
-    const choices = [['q', 'Queen'], ['r', 'Rook'], ['b', 'Bishop'], ['n', 'Knight']];
-    const m = openModal(`<h3>Promote your pawn</h3><p>Most players choose the queen.</p>
-      <div class="promo-row">${choices.map(([k, n]) => `<button class="promo" data-p="${k}">${piece(k, color, t)}<span>${n}</span></button>`).join('')}</div>`, {
+    const m = openModal(`<h3>${tr('promo.title')}</h3><p>${tr('promo.text')}</p>
+      <div class="promo-row">${['q', 'r', 'b', 'n'].map((k) => `<button class="promo" data-p="${k}">${piece(k, color, t)}<span>${pieceName(k)}</span></button>`).join('')}</div>`, {
       onClose: () => drawBoard(),
     });
     m.el.querySelectorAll('[data-p]').forEach((b) => {
@@ -311,9 +301,9 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
   function undo() {
     if (!canUndo()) return;
     if (isAi && !assisted) {
-      const m = openModal(`<div class="sheet-icon">${icon('rotate-ccw', 34)}</div><h3>Take back your move?</h3>
-        <p>You can, but this game will then be <b>unrated</b>: it will not change your Computer Rating.</p>
-        <div class="sheet-actions">${pill('Take back', { attrs: 'data-m="yes"' })}${pill('Keep playing', { variant: 'light', size: 'm', attrs: 'data-m="no"' })}</div>`);
+      const m = openModal(`<div class="sheet-icon">${icon('rotate-ccw', 34)}</div><h3>${tr('undo.title')}</h3>
+        <p>${tr('undo.text')}</p>
+        <div class="sheet-actions">${pill(tr('undo.yes'), { attrs: 'data-m="yes"' })}${pill(tr('common.keepPlaying'), { variant: 'light', size: 'm', attrs: 'data-m="no"' })}</div>`);
       m.el.querySelector('[data-m="no"]').onclick = m.close;
       m.el.querySelector('[data-m="yes"]').onclick = () => {
         m.close();
@@ -338,9 +328,9 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
 
   function askResign() {
     const t = turn();
-    const m = openModal(`<div class="sheet-icon">${icon('flag', 34)}</div><h3>Resign this game?</h3>
-      <p>${isAi ? 'The computer will win this game.' : `${t === 'w' ? 'White' : 'Black'} resigns and ${t === 'w' ? 'Black' : 'White'} wins.`}</p>
-      <div class="sheet-actions">${pill('Resign', { attrs: 'data-m="yes"' })}${pill('Keep playing', { variant: 'light', size: 'm', attrs: 'data-m="no"' })}</div>`);
+    const m = openModal(`<div class="sheet-icon">${icon('flag', 34)}</div><h3>${tr('resign.title')}</h3>
+      <p>${isAi ? tr('resign.ai') : tr('resign.local', { side: colorName(t), opp: colorName(other(t)) })}</p>
+      <div class="sheet-actions">${pill(tr('game.resign'), { attrs: 'data-m="yes"' })}${pill(tr('common.keepPlaying'), { variant: 'light', size: 'm', attrs: 'data-m="no"' })}</div>`);
     m.el.querySelector('[data-m="no"]').onclick = m.close;
     m.el.querySelector('[data-m="yes"]').onclick = () => {
       m.close();
@@ -385,9 +375,9 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
     return { byWhite: lost('b'), byBlack: lost('w'), diff: material('w') - material('b') };
   }
 
-  const nameOf = (c) => (isAi ? (c === config.playerColor ? state.settings.playerName : 'Computer') : c === 'w' ? 'White' : 'Black');
+  const nameOf = (c) => (isAi ? (c === config.playerColor ? displayName(state.settings.playerName) : tr('game.computer')) : colorName(c));
   const subOf = (c) =>
-    isAi ? (c === config.playerColor ? (c === 'w' ? 'White' : 'Black') : AI_LEVELS[config.aiLevel].label) : 'Friend';
+    isAi ? (c === config.playerColor ? colorName(c) : levelName(config.aiLevel)) : tr('game.friend');
 
   function playerBar(c, cap) {
     const active = !result().over && turn() === c;
@@ -434,21 +424,17 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
       const t = endText();
       return `<div class="status">${t.title} · ${t.subtitle}</div>`;
     }
-    if (thinking) return `<div class="coach">${'<span class="coach-ic">' + icon('robot', 20) + '</span>'}<p>The computer is thinking<span class="dots"></span></p></div>`;
+    if (thinking) return `<div class="coach">${'<span class="coach-ic">' + icon('robot', 20) + '</span>'}<p>${tr('coach.thinking')}<span class="dots"></span></p></div>`;
     if (!hints || !humanTurn()) return '';
-    const names = isAi
-      ? { you: 'you', your: 'your', opponent: 'The computer' }
-      : turn() === 'w'
-        ? { you: 'White', your: "White's", opponent: 'Black' }
-        : { you: 'Black', your: "Black's", opponent: 'White' };
+    const names = { you: 'you', your: 'your', opponent: 'The computer' }; // English text unused: the site translates msg.key
     const msg = coachMessage(game, findThreats(game.pos, turn()), names);
-    if (!msg) return `<div class="coach">${'<span class="coach-ic">' + icon('school', 20) + '</span>'}<p>${turn() === 'w' ? 'White' : 'Black'} to move. Take your time.</p></div>`;
-    return `<div class="coach ${msg.tone ? `tone-${msg.tone}` : ''}"><span class="coach-ic">${icon('school', 20)}</span><p>${esc(msg.text)}</p></div>`;
+    if (!msg) return `<div class="coach">${'<span class="coach-ic">' + icon('school', 20) + '</span>'}<p>${tr('coach.toMove', { side: colorName(turn()) })}</p></div>`;
+    return `<div class="coach ${msg.tone ? `tone-${msg.tone}` : ''}"><span class="coach-ic">${icon('school', 20)}</span><p>${esc(msg.key ? coachText(msg, turn(), isAi) : msg.text)}</p></div>`;
   }
 
   function moveList() {
     const moves = game.sanList();
-    if (!moves.length) return '<p class="no-moves">No moves yet</p>';
+    if (!moves.length) return `<p class="no-moves">${tr('game.noMoves')}</p>`;
     let html = '';
     for (let i = 0; i < moves.length; i += 2) {
       const lastPair = i + 2 >= moves.length;
@@ -469,10 +455,10 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
     const action = (ic, label, act, { disabled, active } = {}) =>
       `<button class="action ${active ? 'on' : ''}" data-act="${act}" ${disabled ? 'disabled' : ''}>${icon(ic, 20)}<span>${label}</span></button>`;
     root.querySelector('.actions').innerHTML = [
-      action('rotate-ccw', 'Undo', 'undo', { disabled: !canUndo() }),
-      action('zap', hints ? 'Hints on' : 'Hints off', 'hints', { active: hints }),
-      !isAi && !state.settings.autoFlip ? action('refresh-cw', 'Flip', 'flip') : '',
-      r.over ? action('play', 'New game', 'replay') : action('flag', 'Resign', 'resign', { disabled: game.history.length === 0 }),
+      action('rotate-ccw', tr('game.undo'), 'undo', { disabled: !canUndo() }),
+      action('zap', tr(hints ? 'game.hintsOn' : 'game.hintsOff'), 'hints', { active: hints }),
+      !isAi && !state.settings.autoFlip ? action('refresh-cw', tr('game.flip'), 'flip') : '',
+      r.over ? action('play', tr('game.newGame'), 'replay') : action('flag', tr('game.resign'), 'resign', { disabled: game.history.length === 0 }),
     ].join('');
   }
 
@@ -481,7 +467,7 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
     drawPanel();
   }
 
-  const title = isAi ? `vs Computer · ${AI_LEVELS[config.aiLevel].label}` : 'Friend game';
+  const title = isAi ? tr('game.vsComputerLevel', { level: levelName(config.aiLevel) }) : tr('game.friendGame');
 
   return {
     title,
@@ -490,7 +476,7 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
     wide: true,
     noFooter: true,
     cls: 'game-main',
-    backRight: config.timeControl ? `<span class="tc">${tcLabel(config.timeControl)}</span>` : '',
+    backRight: config.timeControl ? `<span class="tc">${tcName(config.timeControl)}</span>` : '',
     html: `<div class="game-layout">
       <div class="board-col">
         <div class="pb-top"></div>
@@ -501,7 +487,7 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
         <div class="coach-slot"></div>
         <div class="moves-box card"></div>
         <div class="actions"></div>
-        <p class="small center desk-only kbd-tip">${icon('pointer', 13)} Click or drag a piece to move it.</p>
+        <p class="small center desk-only kbd-tip">${icon('pointer', 13)} ${tr('game.dragTip')}</p>
       </aside>
     </div>`,
     mount(el) {
@@ -521,8 +507,8 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks, c
       draw();
       startClock();
       maybeComputer();
-      if (broken) toast('Part of your saved game could not be read. The game continues from the last readable move.');
-      else if (resumed && clocks) toast('Game resumed. The clock was paused while you were away.');
+      if (broken) toast(tr('game.brokenSave'));
+      else if (resumed && clocks) toast(tr('game.resumed'));
     },
     unmount() {
       alive = false;

@@ -1,17 +1,21 @@
 // Building blocks of the site (same look as the app's components).
 import { icon } from './icons.js';
 import { fileOf, rowOf, squareName } from '../../src/engine/chess.js';
+import { t } from './i18n.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 export const TABS = [
-  { key: 'home', label: 'Home', icon: 'home' },
-  { key: 'play', label: 'Play', icon: 'play' },
-  { key: 'ranking', label: 'Ranking', icon: 'bar-chart-2' },
-  { key: 'community', label: 'Community', icon: 'users' },
-  { key: 'learn', label: 'Learn', icon: 'book-open' },
+  { key: 'home', icon: 'home' },
+  { key: 'play', icon: 'play' },
+  { key: 'ranking', icon: 'bar-chart-2' },
+  { key: 'community', icon: 'users' },
+  { key: 'learn', icon: 'book-open' },
 ];
+export const tabLabel = (key) => t(`nav.${key}`);
+/** Shorter label for the phone tab bar, when a language needs one. */
+export const tabShort = (key) => { const v = t(`nav.short.${key}`); return v.startsWith('nav.short.') ? tabLabel(key) : v; };
 
 // ︎ forces the "text" look (otherwise some phones draw an emoji).
 const FILLED = { k: '♚︎', q: '♛︎', r: '♜︎', b: '♝︎', n: '♞︎', p: '♟︎' };
@@ -56,7 +60,7 @@ export function tile({ ic, glyph, label, sub, dark, soon, attrs = '' }) {
   const art = glyph ? `<span class="tile-glyph">${FILLED[glyph]}</span>` : icon(ic, 28);
   return `<button class="tile ${dark ? 'tile-dark' : 'card'} ${soon ? 'is-soon' : ''}" ${attrs}>
     ${art}<span class="tile-label">${esc(label)}</span>${sub ? `<span class="tile-sub">${esc(sub)}</span>` : ''}
-    ${soon ? `${badge('Soon', 'gold', 'corner')}<span class="sr-only">, not available yet</span>` : ''}
+    ${soon ? `${badge(t('common.soon'), 'gold', 'corner')}<span class="sr-only">, ${t('common.notAvailable')}</span>` : ''}
   </button>`;
 }
 
@@ -92,13 +96,12 @@ export function piece(type, color, theme) {
 }
 
 const FILES = 'abcdefgh';
-const PIECE_NAME = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' };
 
 /**
  * Board HTML. opts: board, theme, orientation, selected, targets, lastMove, checkSquare, danger, showCoordinates
  */
 export function boardHTML(o) {
-  const t = o.theme;
+  const th = o.theme;
   const cells = [];
   for (let vr = 0; vr < 8; vr++) {
     for (let vf = 0; vf < 8; vf++) {
@@ -114,26 +117,26 @@ export function boardHTML(o) {
       if (o.danger.includes(index)) inner += '<span class="ov ov-danger"></span>';
       if (o.showCoordinates && vf === 0) inner += `<span class="coord rank">${8 - rowOf(index)}</span>`;
       if (o.showCoordinates && vr === 7) inner += `<span class="coord file">${FILES[fileOf(index)]}</span>`;
-      if (p) inner += piece(p.type, p.color, t);
+      if (p) inner += piece(p.type, p.color, th);
       if (isTarget) inner += p ? '<span class="ov ov-ring"></span>' : '<span class="ov ov-dot"><i></i></span>';
       // Spoken description for screen readers (never only a colour).
       let label = squareName(index);
-      if (p) label += `, ${p.color === 'w' ? 'white' : 'black'} ${PIECE_NAME[p.type]}`;
-      if (o.selected === index) label += ', selected';
-      if (isTarget) label += p ? ', can be captured' : ', possible move';
-      if (o.checkSquare === index) label += ', in check';
-      if (o.danger.includes(index)) label += ', in danger';
-      if (isLast) label += ', last move';
+      if (p) label += `, ${t(`sq.piece.${p.color}`, { piece: t(`piece.${p.type}`).toLowerCase() })}`;
+      if (o.selected === index) label += `, ${t('sq.selected')}`;
+      if (isTarget) label += `, ${t(p ? 'sq.capture' : 'sq.move')}`;
+      if (o.checkSquare === index) label += `, ${t('sq.check')}`;
+      if (o.danger.includes(index)) label += `, ${t('sq.danger')}`;
+      if (isLast) label += `, ${t('sq.last')}`;
       const focusable = index === (o.selected ?? (o.orientation === 'w' ? 52 : 12));
       cells.push(
         `<div class="sq ${light ? 'l' : 'd'}" data-sq="${index}" role="gridcell" aria-label="${label}" tabindex="${focusable ? 0 : -1}">${inner}</div>`,
       );
     }
   }
-  const vars = `--light:${t.light};--dark:${t.dark};--frame:${t.frame};--last:${t.lastMove};--sel:${t.selected};--hint:${t.hint};--check:${t.check};--danger:${t.danger}`;
+  const vars = `--light:${th.light};--dark:${th.dark};--frame:${th.frame};--last:${th.lastMove};--sel:${th.selected};--hint:${th.hint};--check:${th.check};--danger:${th.danger}`;
   const rowsHtml = [];
   for (let r = 0; r < 8; r++) rowsHtml.push(`<div class="brow" role="row">${cells.slice(r * 8, r * 8 + 8).join('')}</div>`);
-  return `<div class="board-frame" style="${vars}"><div class="board" role="grid" aria-label="Chessboard. Use the arrow keys to move between squares and Enter to pick or drop a piece.">${rowsHtml.join('')}</div></div>`;
+  return `<div class="board-frame" style="${vars}"><div class="board" role="grid" aria-label="${t('sq.board')}">${rowsHtml.join('')}</div></div>`;
 }
 
 /**
@@ -283,7 +286,7 @@ export const closeModal = () => modalClose?.();
 
 export function infoModal(ic, title, text) {
   const m = openModal(`<div class="sheet-icon">${icon(ic, 34)}</div><h3>${esc(title)}</h3><p>${esc(text)}</p>
-    ${pill('Got it', { size: 'm', cls: 'block', attrs: 'data-close' })}`);
+    ${pill(t('common.gotIt'), { size: 'm', cls: 'block', attrs: 'data-close' })}`);
   m.el.querySelector('[data-close]').onclick = m.close;
 }
 

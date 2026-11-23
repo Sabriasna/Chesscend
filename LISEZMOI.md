@@ -74,3 +74,9 @@ Le classement mondial et le classement entre amis ont besoin d'un serveur, qui n
 
 - La page **Legal notice / Mentions légales** est accessible en bas de chaque page (adresse `#legal`). Texte à modifier dans `web/js/pages.js` (fonction `legalPage`).
 - Les polices (Poppins et les pièces d'échecs) sont dans `web/fonts/` : le site n'appelle plus Google. Licences dans le même dossier.
+
+### Langues (site)
+
+- Le site est en **anglais par défaut**, avec le **français** et l'**espagnol** au choix : bouton de langue en haut (globe), dans Profil et en bas de page. Le choix est mémorisé. Lien direct : ajouter `?lang=fr` ou `?lang=es` à l'adresse.
+- Textes de l'interface : `web/js/lang/en.js` (référence), `fr.js`, `es.js`. Leçons et puzzles : `web/js/lang/content-fr.js` et `content-es.js`. Mentions légales : `web/js/lang/legal.js`.
+- Pour changer un texte, modifier la même clé dans les trois fichiers. Le test `tests/i18n.test.mjs` signale toute traduction manquante.

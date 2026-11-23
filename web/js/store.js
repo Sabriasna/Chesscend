@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
   autoFlip: false,
   haptics: true,
   preferredLevel: 2,
+  lang: 'en', // English by default; 'fr' and 'es' available
 };
 const DEFAULT_STATS = { rating: 800, games: [] };
 const DEFAULT_PROGRESS = { lessonsDone: [], puzzlesSolved: [] };
@@ -94,6 +95,7 @@ export function cleanSettings(v) {
   if (typeof v.themeId === 'string') s.themeId = v.themeId;
   for (const k of ['showHints', 'showCoordinates', 'autoFlip', 'haptics']) if (typeof v[k] === 'boolean') s[k] = v[k];
   if ([1, 2, 3, 4].includes(v.preferredLevel)) s.preferredLevel = v.preferredLevel;
+  if (['en', 'fr', 'es'].includes(v.lang)) s.lang = v.lang;
   return s;
 }
 

@@ -73,16 +73,21 @@ STICKING_OUT = """() => [...document.querySelectorAll('main *')].filter((e) => {
   return r.right > innerWidth + 1 || r.left < -1;
 }).map((e) => e.className || e.tagName).slice(0, 3)"""
 
+# A text key or an unfilled {placeholder} shown on screen means a missing translation.
+RAW_KEYS = """() => (document.body.innerText.match(/\\{[a-zA-Z]+\\}|\\b(nav|home|play|ranking|learn|lb|coach|common|setup|game|end|puzzle|lesson|profile|community|stats|rating|sq|level|piece)\\.[a-z][A-Za-z.]+/g) || []).slice(0, 3)"""
+
 LONG_GAME = ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5', 'c3', 'Nf6', 'd3', 'd6', 'O-O', 'O-O', 'Re1', 'a6', 'a4', 'Ba7', 'Nbd2', 'h6',
              'h3', 'Re8', 'Nf1', 'Be6', 'Bxe6', 'Rxe6', 'Ng3', 'Qd7', 'Be3', 'Bxe3', 'Rxe3', 'Rae8', 'Qb3', 'b6', 'Rd1', 'Na5', 'Qc2', 'c5']
 
 
-async def test_pages_and_responsive(browser):
+async def test_pages_and_responsive(browser, lang='en', sizes=None):
     routes = ['home', 'play', 'ranking', 'community', 'learn', 'setup', 'setup-friend', 'profile', 'course-basics', 'lesson-b5', 'puzzle-p2', 'puzzles', 'legal']
-    for w, h, touch in [(320, 568, True), (375, 667, True), (390, 844, True), (430, 932, True), (768, 1024, True), (1024, 768, False), (1280, 800, False), (1920, 1080, False)]:
+    sizes = sizes or [(320, 568, True), (375, 667, True), (390, 844, True), (430, 932, True), (768, 1024, True), (1024, 768, False), (1280, 800, False), (1920, 1080, False)]
+    for w, h, touch in sizes:
         long_game = {'config': {'mode': 'ai', 'aiLevel': 2, 'playerColor': 'w', 'timeControl': {'minutes': 10, 'increment': 0}},
                      'moves': LONG_GAME, 'savedAt': 1}
-        ctx, pg = await new_page(browser, w, h, touch, storage={'chesscend:savedGame': json.dumps(long_game), 'chesscend:version': '2'})
+        ctx, pg = await new_page(browser, w, h, touch, storage={'chesscend:savedGame': json.dumps(long_game), 'chesscend:version': '2',
+                                                              'chesscend:settings': json.dumps({'lang': lang})})
         bad = []
         for r in ['game'] + routes:  # 'game' = a 36-move game, with a long move list
             await pg.goto(SITE + '#' + r)
@@ -90,6 +95,9 @@ async def test_pages_and_responsive(browser):
             over = await pg.evaluate('document.documentElement.scrollWidth - window.innerWidth')
             if over > 0:
                 bad.append(f'{r}: {over}px wider')
+            raw = await pg.evaluate(RAW_KEYS)
+            if raw:
+                bad.append(f'{r}: untranslated text {raw}')
             out = await pg.evaluate(STICKING_OUT)
             if out:
                 bad.append(f'{r}: sticks out of the screen: {out}')
@@ -110,7 +118,7 @@ async def test_pages_and_responsive(browser):
         }""")
         if hidden > 0:
             bad.append(f'tab bar hides {hidden}px')
-        check(f'all pages render, no horizontal overflow at {w}px', not bad and not pg.errors, '; '.join(bad + pg.errors[:3]))
+        check(f'[{lang}] all pages render, no horizontal overflow at {w}px', not bad and not pg.errors, '; '.join(bad + pg.errors[:3]))
         await ctx.close()
 
 
@@ -304,10 +312,55 @@ async def test_privacy_and_legal(browser):
     await ctx.close()
 
 
+async def test_languages(browser):
+    ctx, pg = await new_page(browser, 1280, 800, storage={})
+    await pg.goto(SITE + '#home')
+    check('English by default', await pg.inner_text('.nav-link.on') == 'Home' and await pg.evaluate('document.documentElement.lang') == 'en')
+    await pg.click('[data-act="lang-menu"]')
+    await pg.click('[data-l="fr"]')
+    await pg.wait_for_timeout(200)
+    check('switch to French from the header', await pg.inner_text('.nav-link.on') == 'Accueil' and await pg.evaluate('document.documentElement.lang') == 'fr')
+    await pg.reload()
+    await pg.wait_for_timeout(300)
+    check('French is remembered after a reload', await pg.inner_text('.nav-link.on') == 'Accueil')
+    # a game in French: coach, buttons and dialogs
+    await pg.goto(SITE + '#setup-friend')
+    await pg.click('[data-act="start"]')
+    await pg.wait_for_timeout(300)
+    coach = await pg.inner_text('.coach-slot')
+    check('coach speaks French', 'Conseil' in coach, coach)
+    await sq(pg, 52)
+    await sq(pg, 36)
+    await pg.click('[data-act="resign"]')
+    check('dialogs in French', await pg.locator('text=Abandonner la partie ?').is_visible())
+    await pg.click('[data-m="no"]')
+    await pg.goto(SITE + '#lesson-b2')
+    await pg.wait_for_timeout(200)
+    check('lessons in French', 'Le pion' in await pg.inner_text('main'))
+    await pg.goto(SITE + '#profile')
+    await pg.click('[data-act="set-lang"][data-arg="es"]')
+    await pg.wait_for_timeout(200)
+    check('switch to Spanish from the profile page', 'Perfil y ajustes' in await pg.inner_text('main'))
+    await pg.click('.footer-lang [data-arg="en"]')
+    await pg.wait_for_timeout(200)
+    check('back to English from the footer', 'Profile & Settings' in await pg.inner_text('main'))
+    await ctx.close()
+    ctx, pg = await new_page(browser, 390, 844, True, storage={})
+    await pg.goto(f'{HOST}/Chesscend/web/?lang=es#play')
+    await pg.wait_for_timeout(300)
+    check('?lang=es in the address opens the site in Spanish', 'Jugar' in await pg.inner_text('.tabbar') and not pg.errors, pg.errors[:2])
+    await ctx.close()
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(executable_path=CHROME)
-        for t in [test_pages_and_responsive, test_undo_restores_clocks, test_pause_when_hidden, test_timeout_and_stats,
+        for lang in ['fr', 'es']:
+            try:
+                await test_pages_and_responsive(browser, lang, [(320, 568, True), (390, 844, True), (768, 1024, True), (1280, 800, False)])
+            except Exception as e:
+                check(f'responsive {lang}', False, repr(e)[:300])
+        for t in [test_languages, test_pages_and_responsive, test_undo_restores_clocks, test_pause_when_hidden, test_timeout_and_stats,
                   test_unrated_after_undo, test_keyboard_and_resign, test_rankings_and_learning, test_storage_problems,
                   test_github_pages_paths, test_privacy_and_legal]:
             try:

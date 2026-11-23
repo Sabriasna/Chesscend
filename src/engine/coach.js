@@ -39,6 +39,7 @@ export function findThreats(pos, color) {
 
 /**
  * Message for the player about to move.
+ * Also returns `key` and `vars` so the website can show the message in other languages.
  * names: { you: 'you'|'White', your: 'your'|"White's", opponent: 'The computer'|'Your opponent' }
  */
 export function coachMessage(game, threats, names) {
@@ -50,6 +51,7 @@ export function coachMessage(game, threats, names) {
   if (pos.inCheck()) {
     return {
       tone: 'red',
+      key: 'check',
       text: `Check! ${Your} king is attacked. Move it, block the attack, or capture the attacker.`,
     };
   }
@@ -57,10 +59,14 @@ export function coachMessage(game, threats, names) {
     const canRetake = pos.isAttacked(last.to, turn);
     return canRetake
       ? {
+          key: 'retake',
+          vars: { piece: last.captured, square: squareName(last.to) },
           text: `${names.opponent} took ${names.your} ${NAME[last.captured]}. Good news: ${names.you} can take back on ${squareName(last.to)}!`,
         }
       : {
           tone: 'red',
+          key: 'lost',
+          vars: { piece: last.captured },
           text: `${names.opponent} took ${names.your} ${NAME[last.captured]} for free. Tip: before each move, check which pieces are undefended.`,
         };
   }
@@ -71,11 +77,13 @@ export function coachMessage(game, threats, names) {
       : 'is attacked and not defended';
     return {
       tone: 'orange',
+      key: t.defended ? 'threatCheaper' : 'threatFree',
+      vars: { piece: t.piece, square: squareName(t.square), attacker: t.attacker },
       text: `Careful: ${names.your} ${NAME[t.piece]} on ${squareName(t.square)} ${why} (orange square). Move it or protect it.`,
     };
   }
   const n = game.history.length;
-  if (n < 2) return { text: 'Tip: start by moving a center pawn (e4 or d4). Tap a piece to see where it can go.' };
-  if (n < 10) return { text: 'Tip: bring out your knights and bishops, then castle to keep your king safe.' };
+  if (n < 2) return { key: 'tipStart', text: 'Tip: start by moving a center pawn (e4 or d4). Tap a piece to see where it can go.' };
+  if (n < 10) return { key: 'tipDevelop', text: 'Tip: bring out your knights and bishops, then castle to keep your king safe.' };
   return null;
 }

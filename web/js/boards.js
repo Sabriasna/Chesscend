@@ -3,6 +3,7 @@ import { icon } from './icons.js';
 import { badge, bindBoard, boardHTML, esc, openModal, piece, pill } from './ui.js';
 import { markLesson, markPuzzle, state, theme } from './store.js';
 import { nav } from './app.js';
+import { colorName, courseText, lessonText, pieceName, puzzleText, t } from './i18n.js';
 import { ALL_LESSONS, COURSES } from '../../src/data/lessons.js';
 import { PUZZLES } from '../../src/data/puzzles.js';
 import { Position, squareIndex } from '../../src/engine/chess.js';
@@ -42,24 +43,25 @@ export function lessonPage(lessonId) {
   };
 
   const done = state.progress.lessonsDone.includes(lesson.id);
+  const lt = lessonText(lesson);
   const course = lesson.courseId;
   const courseLessons = ALL_LESSONS.filter((l) => l.courseId === course);
   const n = courseLessons.findIndex((l) => l.id === lesson.id) + 1;
 
   return {
-    title: lesson.title,
-    sub: `Lesson ${index + 1}`,
+    title: lt.title,
+    sub: t('lesson.number', { i: index + 1 }),
     back: `course-${course}`,
     tab: 'learn',
     wide: true,
     html: `<div class="study-layout">
       <div class="board-col"><div class="board-slot"></div></div>
       <div class="study-text">
-        <p class="eyebrow">Lesson ${n} of ${courseLessons.length} · ${esc(COURSES.find((c) => c.id === course)?.title ?? '')}</p>
-        <h1 class="page-title">${esc(lesson.title)}</h1>
-        <div class="card">${lesson.paragraphs.map((p) => `<p class="body">${esc(p)}</p>`).join('')}</div>
-        <p class="tip">${icon('pointer', 18)} <span>Click any piece on the board to see where it can go.</span></p>
-        ${pill(done ? (sameCourseNext ? 'Next lesson' : 'Back to course') : 'Got it!', { icon: done ? 'arrow-right' : 'check', attrs: 'data-act="finish"', cls: 'block' })}
+        <p class="eyebrow">${t('lesson.of', { i: n, n: courseLessons.length })} · ${esc(courseText(COURSES.find((c) => c.id === course)).title)}</p>
+        <h1 class="page-title">${esc(lt.title)}</h1>
+        <div class="card">${lt.paragraphs.map((p) => `<p class="body">${esc(p)}</p>`).join('')}</div>
+        <p class="tip">${icon('pointer', 18)} <span>${t('lesson.tip')}</span></p>
+        ${pill(t(done ? (sameCourseNext ? 'lesson.next' : 'lesson.backToCourse') : 'lesson.gotIt'), { icon: done ? 'arrow-right' : 'check', attrs: 'data-act="finish"', cls: 'block' })}
       </div>
     </div>`,
     mount(el) {
@@ -130,11 +132,11 @@ export function puzzlePage(startId) {
     if (!targets().includes(to)) return false;
     const promo = pos.legalMoves().some((m) => m.from === from && m.to === to && m.promotion);
     if (promo) {
-      const t = theme();
+      const th = theme();
       const color = pos.turn;
-      const md = openModal(`<h3>Promote your pawn</h3><p>Most players choose the queen.</p>
-        <div class="promo-row">${[['q', 'Queen'], ['r', 'Rook'], ['b', 'Bishop'], ['n', 'Knight']]
-          .map(([k, n]) => `<button class="promo" data-p="${k}">${piece(k, color, t)}<span>${n}</span></button>`)
+      const md = openModal(`<h3>${t('promo.title')}</h3><p>${t('promo.text')}</p>
+        <div class="promo-row">${['q', 'r', 'b', 'n']
+          .map((k) => `<button class="promo" data-p="${k}">${piece(k, color, th)}<span>${pieceName(k)}</span></button>`)
           .join('')}</div>`);
       md.el.querySelectorAll('[data-p]').forEach((b) => (b.onclick = () => (md.close(), tryMove(from, to, b.dataset.p))));
     } else tryMove(from, to);
@@ -143,30 +145,31 @@ export function puzzlePage(startId) {
 
   function panel() {
     const solvedCount = state.progress.puzzlesSolved.length;
+    const pt = puzzleText(puzzle);
     let box = '';
     if (status === 'solving')
-      box = `<div class="card"><div class="inline-top">${icon('bulb', 24, 'gold')}<p class="body">${esc(showHint ? puzzle.hint : 'Find the move that checkmates the king.')}</p></div>
-        ${showHint ? '' : pill('Show a hint', { variant: 'light', size: 'm', attrs: 'data-act="hint"', cls: 'block mt' })}</div>`;
+      box = `<div class="card"><div class="inline-top">${icon('bulb', 24, 'gold')}<p class="body">${esc(showHint ? pt.hint : t('puzzle.find'))}</p></div>
+        ${showHint ? '' : pill(t('puzzle.showHint'), { variant: 'light', size: 'm', attrs: 'data-act="hint"', cls: 'block mt' })}</div>`;
     if (status === 'solved')
-      box = `<div class="card ok-card"><div class="inline-top">${icon('check-circle', 26, 'green')}<strong class="h3">Checkmate! Well done.</strong></div>
-        <p class="small mt-s">${solvedCount} / ${PUZZLES.length} puzzles solved</p></div>`;
+      box = `<div class="card ok-card"><div class="inline-top">${icon('check-circle', 26, 'green')}<strong class="h3">${t('puzzle.solved')}</strong></div>
+        <p class="small mt-s">${t('puzzle.solvedCount', { done: solvedCount, n: PUZZLES.length })}</p></div>`;
     if (status === 'wrong')
-      box = `<div class="card ko-card"><div class="inline-top">${icon('x-circle', 26, 'red')}<strong class="h3">Not quite. The king can still escape.</strong></div>
-        <p class="small mt-s">No worries, try again!</p></div>`;
+      box = `<div class="card ko-card"><div class="inline-top">${icon('x-circle', 26, 'red')}<strong class="h3">${t('puzzle.wrong')}</strong></div>
+        <p class="small mt-s">${t('puzzle.tryAgainText')}</p></div>`;
 
     const btns = [];
-    if (status === 'wrong') btns.push(pill('Try again', { icon: 'rotate-ccw', attrs: 'data-act="retry"', cls: 'grow' }));
-    if (status !== 'wrong' && index > 0) btns.push(pill('Previous', { variant: 'light', size: 'm', attrs: 'data-act="prev"', cls: 'grow' }));
-    if (status === 'solved' && index < PUZZLES.length - 1) btns.push(pill('Next puzzle', { icon: 'arrow-right', attrs: 'data-act="next"', cls: 'grow' }));
-    if (status === 'solving' && index < PUZZLES.length - 1) btns.push(pill('Skip', { variant: 'light', size: 'm', attrs: 'data-act="next"', cls: 'grow' }));
+    if (status === 'wrong') btns.push(pill(t('common.tryAgain'), { icon: 'rotate-ccw', attrs: 'data-act="retry"', cls: 'grow' }));
+    if (status !== 'wrong' && index > 0) btns.push(pill(t('puzzle.previous'), { variant: 'light', size: 'm', attrs: 'data-act="prev"', cls: 'grow' }));
+    if (status === 'solved' && index < PUZZLES.length - 1) btns.push(pill(t('puzzle.next'), { icon: 'arrow-right', attrs: 'data-act="next"', cls: 'grow' }));
+    if (status === 'solving' && index < PUZZLES.length - 1) btns.push(pill(t('puzzle.skip'), { variant: 'light', size: 'm', attrs: 'data-act="next"', cls: 'grow' }));
 
     const dots = PUZZLES.map(
-      (p, i) => `<button class="pdot ${i === index ? 'on' : ''} ${state.progress.puzzlesSolved.includes(p.id) ? 'ok' : ''}" data-act="goto" data-arg="${i}" aria-label="Puzzle ${i + 1}">${i + 1}</button>`,
+      (p, i) => `<button class="pdot ${i === index ? 'on' : ''} ${state.progress.puzzlesSolved.includes(p.id) ? 'ok' : ''}" data-act="goto" data-arg="${i}" aria-label="${t('puzzle.number', { i: i + 1, n: PUZZLES.length })}">${i + 1}</button>`,
     ).join('');
 
-    return `<p class="eyebrow">Puzzle ${index + 1} / ${PUZZLES.length}</p>
-      <div class="puzzle-head"><h1 class="page-title">${esc(puzzle.title)}</h1>${state.progress.puzzlesSolved.includes(puzzle.id) ? badge('Solved', 'green') : ''}</div>
-      <p class="small">${toMove() === 'w' ? 'White' : 'Black'} to move · Checkmate in 1</p>
+    return `<p class="eyebrow">${t('puzzle.number', { i: index + 1, n: PUZZLES.length })}</p>
+      <div class="puzzle-head"><h1 class="page-title">${esc(pt.title)}</h1>${state.progress.puzzlesSolved.includes(puzzle.id) ? badge(t('puzzle.solvedBadge'), 'green') : ''}</div>
+      <p class="small">${t('puzzle.toMove', { side: colorName(toMove()) })}</p>
       <div class="mt">${box}</div>
       <div class="btn-row">${btns.join('')}</div>
       <div class="pdots">${dots}</div>`;
@@ -186,12 +189,12 @@ export function puzzlePage(startId) {
     });
     root.querySelector('.study-text').innerHTML = panel();
     const back = document.querySelector('.back-title');
-    if (back) back.textContent = `Puzzle ${index + 1} / ${PUZZLES.length}`;
+    if (back) back.textContent = t('puzzle.number', { i: index + 1, n: PUZZLES.length });
   }
 
   return {
-    title: 'Puzzles',
-    sub: `Puzzle ${index + 1} / ${PUZZLES.length}`,
+    title: t('learn.puzzles'),
+    sub: t('puzzle.number', { i: index + 1, n: PUZZLES.length }),
     tab: 'learn',
     wide: true,
     html: `<div class="study-layout"><div class="board-col"><div class="board-slot"></div></div><div class="study-text"></div></div>`,
