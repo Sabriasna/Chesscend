@@ -207,10 +207,14 @@ if (fromEmail) {
   handleEmailRedirect(emailHash).then((r) => {
     if (!r) return;
     if (r.error) {
-      toast(t(r.error === 'otp_expired' ? 'auth.linkExpired' : 'auth.err.session'), 7000);
+      toast(t(r.google ? 'auth.err.google' : r.error === 'otp_expired' ? 'auth.linkExpired' : 'auth.err.session'), 7000);
       nav.go('account');
     } else if (r.type === 'recovery') nav.go('reset-password');
-    else {
+    else if (r.type === 'oauth') {
+      syncNow();
+      toast(t('auth.welcomeBack'));
+      nav.go('account');
+    } else {
       syncNow();
       toast(t('auth.confirmed'), 6000);
       nav.go('account');

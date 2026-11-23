@@ -82,3 +82,16 @@ Les écrans suivants sont déjà codés et testés (`tests/web.test.mjs`) :
 5. Gérer les comptes : pseudo modéré, suppression de compte, signalement.
 6. Volet légal (RGPD) : politique de confidentialité, mentions légales, conditions d'utilisation, âge minimum. Ne collecter que le nécessaire.
 7. Pour les forums et les clubs : modération avant ouverture.
+
+## Connexion avec Google
+
+Le site appelle `/auth/v1/authorize?provider=google` et revient sur `web/` avec la session dans l'adresse (#access_token=…).
+Tant que le fournisseur Google n'est pas activé dans Supabase, le bouton affiche « pas encore disponible » (vérifié via `/auth/v1/settings`).
+
+À faire une fois :
+1. Google Cloud Console → APIs & Services → écran de consentement OAuth (type « Externe »), puis Identifiants → Créer → ID client OAuth → « Application Web ».
+   - Origine JavaScript autorisée : `https://sabriasna.github.io`
+   - URI de redirection autorisé : `https://umisavpcofubvegdmglc.supabase.co/auth/v1/callback`
+2. Supabase → Authentication → Sign In / Providers → Google : activer, coller l'ID client et le code secret, enregistrer.
+
+Un compte créé avec Google reçoit le pseudo provisoire `player_xxxxxxxx` ; la page Compte demande au joueur d'en choisir un.

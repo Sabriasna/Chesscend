@@ -5,7 +5,7 @@ import * as auth from './auth.js';
 import { logOut, onSyncChange, syncNow, syncStatus } from './sync.js';
 import { nav } from './app.js';
 import { displayName, t } from './i18n.js';
-import { isPersistent, state } from './store.js';
+import { isPersistent, state, updateSettings } from './store.js';
 
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,20}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -26,6 +26,18 @@ function busy(form, on) {
   form.querySelectorAll('button, input').forEach((el) => (el.disabled = on));
   form.classList.toggle('is-busy', on);
 }
+
+// Google's "G", as its sign-in button guidelines ask.
+const GOOGLE_G = `<svg class="google-g" width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+</svg>`;
+
+const googleBlock = () => `<button class="pill pill-l block google-btn" type="button" data-act="google">${GOOGLE_G}<span>${t('auth.google')}</span></button>
+      <p class="small center">${t('auth.googleConsent', { link: `<a class="text-link" href="#legal" target="_blank">${t('legal.title')}</a>` })}</p>
+      <div class="or-line" role="separator"><span>${t('auth.or')}</span></div>`;
 
 /* ================================================================ signed out */
 function signedOutHtml() {
@@ -52,6 +64,7 @@ function signedOutHtml() {
   const form =
     view === 'login'
       ? `<form class="card auth-form" data-form="login" novalidate>
+      ${googleBlock()}
       ${field('email', t('auth.email'), 'email', 'autocomplete="email" required')}
       ${field('password', t('auth.password'), 'password', 'autocomplete="current-password" required')}
       ${errorBox()}
@@ -59,6 +72,7 @@ function signedOutHtml() {
       <button class="link-btn center-link" type="button" data-act="view" data-arg="forgot">${t('auth.forgotLink')}</button>
     </form>`
       : `<form class="card auth-form" data-form="signup" novalidate>
+      ${googleBlock()}
       ${field('username', t('auth.username'), 'text', 'autocomplete="username" maxlength="20" required pattern="[A-Za-z0-9_.\\-]{3,20}" aria-describedby="username-help"')}
       <p class="small field-help" id="username-help">${t('auth.usernameHelp')}</p>
       ${field('email', t('auth.email'), 'email', 'autocomplete="email" required')}
@@ -162,6 +176,15 @@ function signedInHtml() {
     </div>
     <p class="small mt-s">${icon('info', 13)} ${t('auth.syncedNote')}</p>
 
+    <form class="card auth-form mt-l" data-form="username" novalidate>
+      <h2 class="h3">${t('auth.usernameTitle')}</h2>
+      <p class="small username-hint">${t('auth.usernameText')}</p>
+      ${field('username', t('auth.username'), 'text', 'autocomplete="username" maxlength="20" required pattern="[A-Za-z0-9_.\\-]{3,20}" aria-describedby="username-help2"')}
+      <p class="small field-help" id="username-help2">${t('auth.usernameHelp')}</p>
+      ${errorBox()}
+      <button class="pill pill-light pill-m" type="submit">${t('auth.saveUsername')}</button>
+    </form>
+
     <form class="card auth-form mt-l" data-form="password" novalidate>
       <h2 class="h3">${t('auth.changePassword')}</h2>
       ${field('password', t('auth.newPassword'), 'password', 'autocomplete="new-password" minlength="8" required')}
@@ -174,6 +197,46 @@ function signedInHtml() {
       <p class="small">${t('auth.delete.text')}</p>
       <button class="pill pill-m danger-btn" data-act="delete">${icon('x-circle', 16)}<span>${t('auth.delete.button')}</span></button>
     </div>`;
+}
+
+let currentUsername = '';
+
+async function loadUsername(el) {
+  const form = el.querySelector('form[data-form="username"]');
+  if (!form) return;
+  const profile = await auth.getProfile().catch(() => null);
+  if (!profile?.username || !form.isConnected) return;
+  currentUsername = profile.username;
+  if (auth.isDefaultUsername(profile.username)) {
+    form.classList.add('needs-username');
+    form.querySelector('.username-hint').textContent = t('auth.chooseUsername');
+  } else if (!form.username.value) form.username.value = profile.username;
+}
+
+async function submitUsername(form) {
+  const username = form.username.value.trim();
+  if (!USERNAME_RE.test(username)) return showError(form, 'usernameFormat');
+  if (username === currentUsername) return toast(t('auth.usernameSaved'));
+  busy(form, true);
+  try {
+    if (username.toLowerCase() !== currentUsername.toLowerCase() && !(await auth.usernameAvailable(username))) {
+      busy(form, false);
+      return showError(form, 'username');
+    }
+    await auth.setUsername(username);
+    currentUsername = username;
+    updateSettings({ playerName: username });
+    const name = document.querySelector('.account-name');
+    if (name) name.textContent = displayName(username);
+    busy(form, false);
+    form.classList.remove('needs-username');
+    form.querySelector('.form-error').hidden = true;
+    form.querySelector('.username-hint').textContent = t('auth.usernameText');
+    toast(t('auth.usernameSaved'));
+  } catch (e) {
+    busy(form, false);
+    showError(form, e.code, e.message);
+  }
 }
 
 async function submitPassword(form, after) {
@@ -213,6 +276,7 @@ export function accountPage() {
           if (f === 'login') submitLogin(form);
           if (f === 'signup') submitSignup(form);
           if (f === 'forgot') submitForgot(form);
+          if (f === 'username') submitUsername(form);
           if (f === 'password') submitPassword(form, () => form.reset() || busy(form, false));
         }),
       );
@@ -222,13 +286,24 @@ export function accountPage() {
         const name = el.querySelector('.account-name');
         if (name) name.textContent = displayName(state.settings.playerName);
       });
-      el.querySelector('input')?.focus({ preventScroll: true });
+      if (signedIn) loadUsername(el);
+      else el.querySelector('input')?.focus({ preventScroll: true });
     },
     unmount: () => unsub?.(),
     actions: {
       view: (v) => {
         view = v;
         nav.go('account');
+      },
+      google: async () => {
+        const form = document.querySelector('.auth-form');
+        busy(form, true);
+        try {
+          await auth.signInWithGoogle(); // leaves the page
+        } catch (e) {
+          busy(form, false);
+          showError(form, e.code, e.message);
+        }
       },
       resend: async () => {
         try {

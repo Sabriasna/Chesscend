@@ -4,6 +4,7 @@ Run: python3 tests/browser/e2e.py
 """
 import asyncio
 import json
+import urllib.parse
 import mimetypes
 import sys
 from pathlib import Path
@@ -21,8 +22,9 @@ class FakeSupabase:
     """A small stand-in for Supabase Auth + database (same requests and answers), with the
     same rule as the real database: each user reaches only their own rows."""
 
-    def __init__(self, confirm_email=False):
+    def __init__(self, confirm_email=False, google=False):
         self.confirm_email = confirm_email
+        self.google = google
         self.users = {}      # email -> {id, password, username, confirmed}
         self.tokens = {}     # access or refresh token -> user id
         self.data = {}       # user id -> {settings, stats, progress}
@@ -53,6 +55,21 @@ class FakeSupabase:
         def out(status, payload=None):
             return route.fulfill(status=status, headers=cors, body=json.dumps(payload) if payload is not None else '')
 
+        if path == '/auth/v1/settings':
+            return await out(200, {'external': {'email': True, 'google': self.google}})
+        if path.startswith('/auth/v1/authorize?provider=google'):
+            # stands for Google's page: the player picks an account and comes back signed in
+            back = urllib.parse.unquote(path.split('redirect_to=')[1])
+            u = self.users.get('g@gmail.com')
+            if not u:
+                n = len(self.users) + 1
+                u = {'id': f'user-{n}', 'email': 'g@gmail.com', 'password': None, 'username': f'player_{n:08x}', 'confirmed': True}
+                self.users[u['email']] = u
+                self.data[u['id']] = {'settings': {}, 'stats': {}, 'progress': {}}
+            sess = self._session(u)
+            frag = f"access_token={sess['access_token']}&expires_in=3600&provider_token=PT&refresh_token={sess['refresh_token']}&token_type=bearer"
+            page = f'<script>location.replace({json.dumps(back + "#" + frag)})</script>'
+            return await route.fulfill(status=200, headers={'content-type': 'text/html'}, body=page)
         if path.startswith('/auth/v1/signup'):
             if body['email'] in self.users:
                 return await out(422, {'error_code': 'user_already_exists', 'msg': 'User already registered'})
@@ -97,6 +114,13 @@ class FakeSupabase:
         if path.startswith('/rest/v1/profiles'):
             row_id = path.split('id=eq.')[1]
             u = self._user_by_id(row_id)
+            if req.method == 'PATCH':
+                if row_id != uid:
+                    return await out(200, [])  # RLS: other rows are invisible
+                if any(o['username'].lower() == body['username'].lower() and o is not u for o in self.users.values()):
+                    return await out(409, {'code': '23505', 'message': 'duplicate key value violates unique constraint'})
+                u['username'] = body['username']
+                return await out(204)
             return await out(200, [{'username': u['username']}] if u and row_id == uid else [])
         if path.startswith('/rest/v1/user_data'):
             if req.method == 'GET':
@@ -551,6 +575,48 @@ async def test_accounts(browser):
     await ctx.close()
 
 
+async def test_google(browser):
+    # provider still off: a clear message, nobody leaves the site
+    fake = FakeSupabase(google=False)
+    ctx, pg = await new_page(browser, 390, 844, True, storage={}, supabase=fake)
+    await pg.goto(SITE + '#account')
+    check('Continue with Google on the log-in form', await pg.locator('form[data-form="login"] .google-btn').is_visible())
+    await pg.click('[data-act="view"][data-arg="signup"]')
+    check('Continue with Google on the sign-up form', await pg.locator('form[data-form="signup"] .google-btn').is_visible())
+    await pg.click('.google-btn')
+    await pg.wait_for_timeout(400)
+    check('Google off: clear message, still on the site', 'not available yet' in await pg.inner_text('.form-error') and '#account' in pg.url)
+    await ctx.close()
+
+    # provider on: back from Google signed in, asked to choose a username
+    fake = FakeSupabase(google=True)
+    fake.users['taken@x.co'] = {'id': 'user-taken', 'email': 'taken@x.co', 'password': 'x' * 8, 'username': 'Magnus', 'confirmed': True}
+    seed = {'chesscend:version': '2', 'chesscend:progress': json.dumps({'lessonsDone': ['b1'], 'puzzlesSolved': []})}
+    ctx, pg = await new_page(browser, 390, 844, True, storage=seed, supabase=fake)
+    await pg.goto(SITE + '#account')
+    await pg.click('.google-btn')
+    await pg.wait_for_timeout(1200)
+    text = await pg.inner_text('main')
+    check('back from Google: signed in on the account page', 'g@gmail.com' in text and pg.url.endswith('#account'), pg.url)
+    check('no tokens left in the address', 'access_token' not in pg.url)
+    check('device progress added to the Google account', fake.data['user-2']['progress'].get('lessonsDone') == ['b1'])
+    check('asked to choose a username', await pg.locator('form.needs-username').is_visible())
+    check('the automatic name is not shown as the player name', 'player_' not in await pg.inner_text('.account-name'))
+    await pg.fill('form[data-form="username"] #username', 'magnus')
+    await pg.click('form[data-form="username"] button[type="submit"]')
+    await pg.wait_for_timeout(400)
+    check('a taken username is refused', 'already taken' in await pg.inner_text('form[data-form="username"] .form-error'))
+    await pg.fill('form[data-form="username"] #username', 'Djam_75')
+    await pg.click('form[data-form="username"] button[type="submit"]')
+    await pg.wait_for_timeout(500)
+    check('username saved in the account', fake.users['g@gmail.com']['username'] == 'Djam_75')
+    check('new username shown, prompt gone', 'Djam_75' in await pg.inner_text('.account-name') and await pg.locator('form.needs-username').count() == 0)
+    await pg.reload()
+    await pg.wait_for_timeout(600)
+    check('after reload the username field shows the saved name', await pg.input_value('form[data-form="username"] #username') == 'Djam_75')
+    await ctx.close()
+
+
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(executable_path=CHROME)
@@ -559,7 +625,7 @@ async def main():
                 await test_pages_and_responsive(browser, lang, [(320, 568, True), (390, 844, True), (768, 1024, True), (1280, 800, False)])
             except Exception as e:
                 check(f'responsive {lang}', False, repr(e)[:300])
-        for t in [test_accounts, test_languages, test_pages_and_responsive, test_undo_restores_clocks, test_pause_when_hidden, test_timeout_and_stats,
+        for t in [test_google, test_accounts, test_languages, test_pages_and_responsive, test_undo_restores_clocks, test_pause_when_hidden, test_timeout_and_stats,
                   test_unrated_after_undo, test_keyboard_and_resign, test_rankings_and_learning, test_storage_problems,
                   test_github_pages_paths, test_privacy_and_legal]:
             try:

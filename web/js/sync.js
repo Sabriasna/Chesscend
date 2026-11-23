@@ -55,7 +55,7 @@ export async function syncNow() {
     replaceData(merged);
     if (state.settings.playerName === 'Player') {
       const profile = await auth.getProfile().catch(() => null);
-      if (profile?.username) updateSettings({ playerName: profile.username.slice(0, 20) });
+      if (profile?.username && !auth.isDefaultUsername(profile.username)) updateSettings({ playerName: profile.username.slice(0, 20) });
     }
     await auth.putUserData(accountData());
     dirty = false;

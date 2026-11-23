@@ -134,3 +134,41 @@ test('links from e-mails: confirmation, password reset, expired link', async () 
   assert.equal(e.error, 'otp_expired');
   assert.equal(await auth.handleEmailRedirect('#home'), null);
 });
+
+test('Google: refused clearly while the provider is off, then sends the player to Google', async () => {
+  const ss = {};
+  globalThis.sessionStorage = { getItem: (k) => ss[k] ?? null, setItem: (k, v) => (ss[k] = String(v)), removeItem: (k) => delete ss[k] };
+  let went = null;
+  location.assign = (u) => (went = u);
+  reply = () => ({ status: 200, body: { external: { email: true, google: false } } });
+  await assert.rejects(auth.signInWithGoogle(), (e) => e.code === 'googleOff');
+  assert.equal(went, null);
+  reply = () => ({ status: 200, body: { external: { email: true, google: true } } });
+  await auth.signInWithGoogle();
+  assert.equal(went, `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent('https://sabriasna.github.io/Chesscend/web/')}`);
+  // back from Google: signed in, welcomed as a Google sign-in
+  reply = () => ({ status: 200, body: { id: 'g1', email: 'g@gmail.com' } });
+  const r = await auth.handleEmailRedirect('#access_token=GT&expires_at=9999999999&expires_in=3600&provider_token=PT&refresh_token=GR&token_type=bearer');
+  assert.deepEqual(r, { type: 'oauth' });
+  assert.equal(auth.currentUser().email, 'g@gmail.com');
+  assert.equal(ss['chesscend:oauth'], undefined);
+  // cancelled on Google's page
+  ss['chesscend:oauth'] = '1';
+  const e = await auth.handleEmailRedirect('#error=access_denied&error_description=cancelled');
+  assert.equal(e.google, true);
+});
+
+test('username: default Google names are recognised, a change touches only the user row', async () => {
+  assert.ok(auth.isDefaultUsername('player_1a2b3c4d'));
+  assert.ok(!auth.isDefaultUsername('Djam'));
+  assert.ok(!auth.isDefaultUsername('player_magnus'));
+  reply = () => ({ status: 204, body: null });
+  calls.length = 0;
+  await auth.setUsername('Djam_75');
+  assert.equal(calls[0].method, 'PATCH');
+  assert.equal(calls[0].url, `${SUPABASE_URL}/rest/v1/profiles?id=eq.g1`);
+  assert.deepEqual(calls[0].body, { username: 'Djam_75' });
+  assert.equal(calls[0].headers.Authorization, 'Bearer GT');
+  reply = () => ({ status: 409, body: { code: '23505', message: 'duplicate key value violates unique constraint' } });
+  await assert.rejects(auth.setUsername('Taken'), (e) => e.code === 'username');
+});

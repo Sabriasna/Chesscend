@@ -709,3 +709,12 @@ button.card:active, .tile:active { transform: scale(0.985); }
   .account-teaser { flex-wrap: wrap; }
   .account-teaser .pill { width: 100%; }
 }
+
+/* Continue with Google */
+.google-btn { background: #fff; border: 1px solid #DADCE0; color: #1F1F1F; gap: 10px; }
+.google-btn:hover { background: #F8F9FA; }
+.google-btn .google-g { flex: none; }
+.or-line { display: flex; align-items: center; gap: 12px; color: var(--ink-soft); font-size: 13px; margin: 4px 0; }
+.or-line::before, .or-line::after { content: ''; flex: 1; height: 1px; background: var(--card-border); }
+.auth-form.needs-username { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-pale), var(--shadow); }
+.auth-form.needs-username .username-hint { color: var(--gold-text); font-weight: 600; }
