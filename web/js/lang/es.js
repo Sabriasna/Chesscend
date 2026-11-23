@@ -379,8 +379,9 @@ export default {
   'profile.haptics.help': 'Pequeña vibración en cada jugada (en los teléfonos compatibles)',
   'profile.localNote': "Sin cuenta, tu nombre, tus ajustes y tu progreso se guardan solo en este navegador.",
   'profile.save': "Guardar",
-  'profile.nameSaved': "Nombre guardado",
-  'profile.saved': "Guardado",
+  'profile.saved': "Ajustes guardados",
+  'profile.unsavedHint': "Tienes cambios que aún no se han guardado.",
+  'profile.unsavedLost': "Tus cambios en los ajustes no se han guardado.",
 
   'legal.title': 'Aviso legal',
   'legal.updated': 'Última actualización: 23 de noviembre de 2026',

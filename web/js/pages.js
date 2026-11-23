@@ -523,10 +523,32 @@ const TOGGLES = ['showHints', 'showCoordinates', 'autoFlip', 'haptics'];
 
 export function profilePage() {
   const s = state.settings;
+  // Changes stay on the page until "Save" is pressed.
+  const savedValues = () => ({
+    playerName: state.settings.playerName === 'Player' ? '' : state.settings.playerName,
+    lang: lang(),
+    themeId: state.settings.themeId,
+    ...Object.fromEntries(TOGGLES.map((k) => [k, !!state.settings[k]])),
+  });
+  let draft = savedValues();
+  let root = null;
+  const changed = () => JSON.stringify(draft) !== JSON.stringify(savedValues());
+  const refresh = () => {
+    if (!root) return;
+    const dirty = changed();
+    root.querySelector('#save-settings').disabled = !dirty;
+    root.querySelector('.save-hint').hidden = !dirty;
+  };
+  const pick = (btn) =>
+    btn.parentElement.querySelectorAll('button').forEach((b) => {
+      b.classList.toggle('on', b === btn);
+      b.setAttribute('aria-pressed', String(b === btn));
+    });
+
   const themes = THEMES.map((th) => {
     const sq = (i) =>
       `<span style="background:${i === 0 || i === 3 ? th.light : th.dark}">${i === 0 ? piece('n', 'b', th) : i === 3 ? piece('q', 'w', th) : ''}</span>`;
-    return `<button class="theme ${th.id === s.themeId ? 'on' : ''}" aria-pressed="${th.id === s.themeId}" data-act="theme" data-arg="${th.id}">
+    return `<button type="button" class="theme ${th.id === s.themeId ? 'on' : ''}" aria-pressed="${th.id === s.themeId}" data-act="theme" data-arg="${th.id}">
       <span class="mini-board" style="background:${th.frame}"><span>${[0, 1, 2, 3].map(sq).join('')}</span></span>
       <span class="theme-name">${themeName(th.id)}</span></button>`;
   }).join('');
@@ -537,13 +559,11 @@ export function profilePage() {
     html: `<div class="narrow">
       ${accountCard()}
       <div class="profile-top">${avatar(displayName(s.playerName), 88, 'var(--gold)')}<h1 class="page-title desk-only">${t('profile.title')}</h1></div>
+      <form class="settings-form" data-form="settings" novalidate>
       <p class="label" id="lbl-name">${t('profile.name')}</p>
-      <form class="name-row" data-form="name">
-        <input class="input" id="name" maxlength="20" placeholder="${t('profile.namePlaceholder')}" value="${s.playerName === 'Player' ? '' : esc(s.playerName)}" autocomplete="off" aria-labelledby="lbl-name">
-        <button class="pill pill-dark pill-m" type="submit" id="save-name" disabled>${t('profile.save')}</button>
-      </form>
+      <input class="input" id="name" maxlength="20" placeholder="${t('profile.namePlaceholder')}" value="${esc(draft.playerName)}" autocomplete="off" aria-labelledby="lbl-name">
       <p class="label">${t('profile.language')}</p>
-      ${segmented(LANGS.map((l) => ({ key: l.code, label: l.name })), lang(), 'set-lang')}
+      ${segmented(LANGS.map((l) => ({ key: l.code, label: l.name })), lang(), 'draft-lang').replaceAll('<button ', '<button type="button" ')}
       <p class="label">${t('profile.theme')}</p>
       <div class="theme-grid">${themes}</div>
       <p class="label">${t('profile.options')}</p>
@@ -551,39 +571,62 @@ export function profilePage() {
         (k) => `<label class="toggle-row"><span class="grow"><strong class="h3">${t(`profile.${k}`)}</strong><span class="small">${t(`profile.${k}.help`)}</span></span>
           <input type="checkbox" class="switch" data-key="${k}" ${s[k] ? 'checked' : ''}></label>`,
       ).join('')}</div>
+      <div class="save-bar">
+        <p class="small save-hint" role="status" hidden>${icon('info', 13)} ${t('profile.unsavedHint')}</p>
+        <button class="pill pill-dark pill-l block" type="submit" id="save-settings" disabled>${t('profile.save')}</button>
+      </div>
+      </form>
       <p class="small center mt-l">${icon('info', 13)} ${t(isSignedIn() ? 'auth.syncedNote' : 'profile.localNote')}</p>
     </div>`,
     mount(el) {
+      root = el;
       const input = el.querySelector('#name');
-      const save = el.querySelector('#save-name');
-      const saved = () => (state.settings.playerName === 'Player' ? '' : state.settings.playerName);
-      input.addEventListener('input', () => (save.disabled = input.value.trim() === saved()));
-      el.querySelector('form[data-form="name"]').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const name = input.value.trim().slice(0, 20);
-        input.value = name;
-        // An empty name means the default name ("Player", shown in the visitor's language).
-        updateSettings({ playerName: name || 'Player' });
-        const first = (name || displayName('Player')).charAt(0).toUpperCase();
-        document.querySelectorAll('.topbar .avatar, .profile-top .avatar').forEach((a) => (a.textContent = first));
-        save.disabled = true;
-        toast(t('profile.nameSaved'));
+      input.addEventListener('input', () => {
+        draft.playerName = input.value.trim().slice(0, 20);
+        refresh();
       });
       el.querySelectorAll('.switch').forEach((c) =>
         c.addEventListener('change', () => {
-          updateSettings({ [c.dataset.key]: c.checked });
-          toast(t('profile.saved'), 1800);
+          draft[c.dataset.key] = c.checked;
+          refresh();
         }),
       );
+      el.querySelector('form[data-form="settings"]').addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (!changed()) return;
+        const newLang = draft.lang !== lang() ? draft.lang : null;
+        // An empty name means the default name ("Player", shown in the visitor's language).
+        updateSettings({
+          playerName: draft.playerName || 'Player',
+          themeId: draft.themeId,
+          ...Object.fromEntries(TOGGLES.map((k) => [k, draft[k]])),
+        });
+        draft = savedValues();
+        if (newLang) {
+          root = null; // the page is drawn again in the new language
+          nav.setLanguage(newLang);
+        } else {
+          const first = (draft.playerName || displayName('Player')).charAt(0).toUpperCase();
+          document.querySelectorAll('.topbar .avatar, .profile-top .avatar').forEach((a) => (a.textContent = first));
+          refresh();
+        }
+        toast(t('profile.saved'));
+      });
+    },
+    unmount() {
+      if (root && changed()) toast(t('profile.unsavedLost'), 5000);
+      root = null;
     },
     actions: {
       theme: (id, btn) => {
-        updateSettings({ themeId: id });
-        toast(t('profile.saved'), 1800);
-        btn.parentElement.querySelectorAll('.theme').forEach((b) => {
-          b.classList.toggle('on', b === btn);
-          b.setAttribute('aria-pressed', String(b === btn));
-        });
+        draft.themeId = id;
+        pick(btn);
+        refresh();
+      },
+      'draft-lang': (code, btn) => {
+        draft.lang = code;
+        pick(btn);
+        refresh();
       },
     },
   };

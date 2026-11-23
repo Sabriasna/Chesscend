@@ -377,8 +377,9 @@ export default {
   'profile.haptics.help': 'Petite vibration à chaque coup (sur les téléphones compatibles)',
   'profile.localNote': "Sans compte, ton prénom, tes réglages et ta progression sont enregistrés dans ce navigateur uniquement.",
   'profile.save': "Enregistrer",
-  'profile.nameSaved': "Prénom enregistré",
-  'profile.saved': "Enregistré",
+  'profile.saved': "Réglages enregistrés",
+  'profile.unsavedHint': "Tu as des modifications pas encore enregistrées.",
+  'profile.unsavedLost': "Tes modifications de réglages n'ont pas été enregistrées.",
 
   'legal.title': 'Mentions légales',
   'legal.updated': 'Dernière mise à jour : 23 novembre 2026',

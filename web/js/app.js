@@ -42,6 +42,7 @@ function languageMenu() {
 }
 
 export const nav = {
+  setLanguage: (code) => changeLanguage(code),
   go(name) {
     if (location.hash.slice(1) === name) render();
     else location.hash = name;
