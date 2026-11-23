@@ -575,6 +575,16 @@ async def test_accounts(browser):
     await ctx.close()
 
 
+async def test_theme_previews(browser):
+    for w, h, mobile in [(390, 844, True), (1280, 800, False), (2254, 1300, False)]:
+        ctx, pg = await new_page(browser, w, h, mobile, storage={})
+        await pg.goto(SITE + '#profile')
+        sizes = await pg.evaluate("[...document.querySelectorAll('.mini-board .piece')].map(p => parseFloat(getComputedStyle(p).fontSize))")
+        boxes = await pg.evaluate("[...document.querySelectorAll('.mini-board .pf')].map(p => { const r = p.getBoundingClientRect(), s = p.closest('.mini-board > span > span').getBoundingClientRect(); return r.height <= s.height + 1 && r.width <= s.width + 1; })")
+        check(f'theme previews: pieces fit their square at {w}px', sizes and max(sizes) <= 32 and all(boxes), str(sizes[:2]))
+        await ctx.close()
+
+
 async def test_google(browser):
     # provider still off: a clear message, nobody leaves the site
     fake = FakeSupabase(google=False)
@@ -625,7 +635,7 @@ async def main():
                 await test_pages_and_responsive(browser, lang, [(320, 568, True), (390, 844, True), (768, 1024, True), (1280, 800, False)])
             except Exception as e:
                 check(f'responsive {lang}', False, repr(e)[:300])
-        for t in [test_google, test_accounts, test_languages, test_pages_and_responsive, test_undo_restores_clocks, test_pause_when_hidden, test_timeout_and_stats,
+        for t in [test_theme_previews, test_google, test_accounts, test_languages, test_pages_and_responsive, test_undo_restores_clocks, test_pause_when_hidden, test_timeout_and_stats,
                   test_unrated_after_undo, test_keyboard_and_resign, test_rankings_and_learning, test_storage_problems,
                   test_github_pages_paths, test_privacy_and_legal]:
             try:

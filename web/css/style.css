@@ -298,6 +298,7 @@ button.card:active, .tile:active { transform: scale(0.985); }
 .mini-board { padding: 3px; border-radius: 6px; }
 .mini-board > span { display: grid; grid-template-columns: 32px 32px; }
 .mini-board > span > span { width: 32px; height: 32px; position: relative; font-size: 25.6px; }
+.mini-board .piece { font-size: 25.6px; } /* no board container here: a fixed size, not a share of the screen */
 .theme-name { font-weight: 500; font-size: 12px; margin-top: 6px; white-space: nowrap; }
 .theme.on .theme-name { font-weight: 700; }
 .toggle-row { display: flex; align-items: center; gap: 14px; padding: 13px 0; cursor: pointer; }
