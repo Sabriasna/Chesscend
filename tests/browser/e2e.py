@@ -61,17 +61,42 @@ async def sq(pg, n):
     await pg.wait_for_timeout(120)
 
 
+# Finds visible elements sticking out of the screen (the page itself hides overflow,
+# so measuring the page width alone is not enough). Decorative and scrollable parts are skipped.
+STICKING_OUT = """() => [...document.querySelectorAll('main *')].filter((e) => {
+  const r = e.getBoundingClientRect();
+  if (!r.width || !r.height) return false;
+  for (let p = e; p && p !== document.body; p = p.parentElement) {
+    if (p.getAttribute('aria-hidden') === 'true') return false;
+    if (p !== e && ['auto', 'scroll'].includes(getComputedStyle(p).overflowX)) return false;
+  }
+  return r.right > innerWidth + 1 || r.left < -1;
+}).map((e) => e.className || e.tagName).slice(0, 3)"""
+
+LONG_GAME = ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5', 'c3', 'Nf6', 'd3', 'd6', 'O-O', 'O-O', 'Re1', 'a6', 'a4', 'Ba7', 'Nbd2', 'h6',
+             'h3', 'Re8', 'Nf1', 'Be6', 'Bxe6', 'Rxe6', 'Ng3', 'Qd7', 'Be3', 'Bxe3', 'Rxe3', 'Rae8', 'Qb3', 'b6', 'Rd1', 'Na5', 'Qc2', 'c5']
+
+
 async def test_pages_and_responsive(browser):
     routes = ['home', 'play', 'ranking', 'community', 'learn', 'setup', 'setup-friend', 'profile', 'course-basics', 'lesson-b5', 'puzzle-p2', 'puzzles', 'legal']
     for w, h, touch in [(320, 568, True), (375, 667, True), (390, 844, True), (430, 932, True), (768, 1024, True), (1024, 768, False), (1280, 800, False), (1920, 1080, False)]:
-        ctx, pg = await new_page(browser, w, h, touch)
+        long_game = {'config': {'mode': 'ai', 'aiLevel': 2, 'playerColor': 'w', 'timeControl': {'minutes': 10, 'increment': 0}},
+                     'moves': LONG_GAME, 'savedAt': 1}
+        ctx, pg = await new_page(browser, w, h, touch, storage={'chesscend:savedGame': json.dumps(long_game), 'chesscend:version': '2'})
         bad = []
-        for r in routes:
+        for r in ['game'] + routes:  # 'game' = a 36-move game, with a long move list
             await pg.goto(SITE + '#' + r)
             await pg.wait_for_timeout(250)
             over = await pg.evaluate('document.documentElement.scrollWidth - window.innerWidth')
             if over > 0:
                 bad.append(f'{r}: {over}px wider')
+            out = await pg.evaluate(STICKING_OUT)
+            if out:
+                bad.append(f'{r}: sticks out of the screen: {out}')
+            if r == 'game':
+                right = await pg.evaluate("document.querySelector('.board-frame').getBoundingClientRect().right - innerWidth")
+                if right > 0:
+                    bad.append(f'game: board cut by {right:.0f}px')
             if not await pg.locator('main.main').is_visible():
                 bad.append(f'{r}: no content')
         # the bottom tab bar must not hide the end of the page
@@ -294,4 +319,5 @@ async def main():
     print(f'\n{len(results) - len(failed)} passed, {len(failed)} failed')
     sys.exit(1 if failed else 0)
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
