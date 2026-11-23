@@ -69,3 +69,8 @@ Le classement mondial et le classement entre amis ont besoin d'un serveur, qui n
 
 - Moteur, sauvegardes, classements : `node --test tests/*.test.mjs`
 - Site dans un vrai navigateur (Chrome et Python Playwright nécessaires) : `python3 tests/browser/e2e.py`
+
+### Mentions légales et polices
+
+- La page **Legal notice / Mentions légales** est accessible en bas de chaque page (adresse `#legal`). Texte à modifier dans `web/js/pages.js` (fonction `legalPage`).
+- Les polices (Poppins et les pièces d'échecs) sont dans `web/fonts/` : le site n'appelle plus Google. Licences dans le même dossier.

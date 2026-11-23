@@ -67,6 +67,7 @@ function route(name) {
   if (name === 'setup') return P.setupPage('ai');
   if (name === 'setup-friend') return P.setupPage('local');
   if (name === 'profile') return P.profilePage();
+  if (name === 'legal') return P.legalPage();
   if (name.startsWith('course-')) return P.coursePage(name.slice(7));
   if (name.startsWith('lesson-')) return lessonPage(name.slice(7));
   if (name === 'puzzles') return puzzlePage(null);
@@ -112,9 +113,9 @@ function tabBar(activeTab) {
 
 const footer = () => `<footer class="footer"><div class="footer-in">
   <div>${logo()}<p class="tag">PLAY • COMPETE • ASCEND</p></div>
-  <div class="footer-links">${TABS.map((t) => `<a href="#${t.key}">${t.label}</a>`).join('')}<a href="#profile">Settings</a></div>
+  <div class="footer-links">${TABS.map((t) => `<a href="#${t.key}">${t.label}</a>`).join('')}<a href="#profile">Settings</a><a href="#legal">Legal notice</a></div>
   <div class="footer-app">${icon('smartphone', 20)}<span>The Chesscend app for iPhone and Android is coming soon.</span></div>
-</div><p class="copy">© ${new Date().getFullYear()} Chesscend. Your progress is saved in this browser only and is not synced between devices.${isPersistent() ? '' : ' <b>Storage is blocked in this browser: progress will be lost when you close the page.</b>'}</p></footer>`;
+</div><p class="copy">© ${new Date().getFullYear()} Chesscend · <a class="text-link" href="#legal">Legal notice · Mentions légales</a> · Your progress is saved in this browser only and is not synced between devices.${isPersistent() ? '' : ' <b>Storage is blocked in this browser: progress will be lost when you close the page.</b>'}</p></footer>`;
 
 function render() {
   const name = location.hash.slice(1) || 'home';

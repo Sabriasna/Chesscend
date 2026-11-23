@@ -62,7 +62,7 @@ async def sq(pg, n):
 
 
 async def test_pages_and_responsive(browser):
-    routes = ['home', 'play', 'ranking', 'community', 'learn', 'setup', 'setup-friend', 'profile', 'course-basics', 'lesson-b5', 'puzzle-p2', 'puzzles']
+    routes = ['home', 'play', 'ranking', 'community', 'learn', 'setup', 'setup-friend', 'profile', 'course-basics', 'lesson-b5', 'puzzle-p2', 'puzzles', 'legal']
     for w, h, touch in [(320, 568, True), (375, 667, True), (390, 844, True), (430, 932, True), (768, 1024, True), (1024, 768, False), (1280, 800, False), (1920, 1080, False)]:
         ctx, pg = await new_page(browser, w, h, touch)
         bad = []
@@ -249,12 +249,33 @@ async def test_github_pages_paths(browser):
     check('/Chesscend/ redirects to the site', pg.url.startswith(SITE), pg.url)
     resp = await pg.goto(f'{HOST}/Chesscend/does-not-exist')
     check('unknown address shows the Chesscend 404 page', resp.status == 404 and 'This square is empty' in await pg.content())
-    for asset in ['web/img/og-image.png', 'web/img/icon-180.png', 'web/img/favicon.svg', 'web/manifest.webmanifest', 'web/js/ai-worker.js', 'src/engine/chess.js']:
-        r = await pg.goto(f'{HOST}/Chesscend/{asset}')
-        check(f'asset reachable: {asset}', r and r.ok)
+    for asset in ['web/fonts/poppins-bold.woff', 'web/fonts/chess-symbols.woff', 'web/img/og-image.png', 'web/img/icon-180.png', 'web/img/favicon.svg', 'web/manifest.webmanifest', 'web/js/ai-worker.js', 'src/engine/chess.js']:
+        ok = await pg.evaluate("u => fetch(u).then(r => r.ok, () => false)", f'{HOST}/Chesscend/{asset}')
+        check(f'asset reachable: {asset}', ok)
     await pg.goto(SITE)
     meta = await pg.evaluate("[...document.querySelectorAll('meta[property^=og], link[rel=canonical]')].length")
     check('Open Graph and canonical tags present', meta >= 8, meta)
+    await ctx.close()
+
+
+async def test_privacy_and_legal(browser):
+    ctx, pg = await new_page(browser)
+    outside = []
+    pg.on('request', lambda r: outside.append(r.url) if not r.url.startswith(HOST) and not r.url.startswith('data:') else None)
+    for r in ['home', 'game', 'ranking', 'legal']:
+        await pg.goto(SITE + '#' + r)
+        await pg.wait_for_timeout(300)
+    await pg.goto(f'{HOST}/Chesscend/nothing-here')
+    await pg.wait_for_timeout(300)
+    check('no request to Google or any other third party', not outside, outside[:5])
+    await pg.goto(SITE + '#home')
+    await pg.click('.footer .copy a[href="#legal"]')
+    await pg.wait_for_timeout(200)
+    txt = await pg.inner_text('main')
+    check('legal notice reachable from the footer, in English and French',
+          'Publisher' in txt and 'Éditeur' in txt and '88 Colin P. Kelly Jr. Street' in txt and 'No cookies' in txt)
+    fonts = await pg.evaluate("document.fonts.check('700 16px Poppins') && document.fonts.check('16px \"Chesscend Symbols\"', '\u265E')")
+    check('site fonts load from the site itself', fonts)
     await ctx.close()
 
 
@@ -263,7 +284,7 @@ async def main():
         browser = await p.chromium.launch(executable_path=CHROME)
         for t in [test_pages_and_responsive, test_undo_restores_clocks, test_pause_when_hidden, test_timeout_and_stats,
                   test_unrated_after_undo, test_keyboard_and_resign, test_rankings_and_learning, test_storage_problems,
-                  test_github_pages_paths]:
+                  test_github_pages_paths, test_privacy_and_legal]:
             try:
                 await t(browser)
             except Exception as e:  # a crashing test is a failed test

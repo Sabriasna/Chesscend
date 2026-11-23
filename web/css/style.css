@@ -1,4 +1,12 @@
 /* Chesscend website — cream & gold, same palette as the app (src/theme/ui.js) */
+/* Fonts hosted with the site (no request to Google). Licences: fonts/OFL-*.txt */
+@font-face { font-family: 'Poppins'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/poppins-regular.woff') format('woff'); }
+@font-face { font-family: 'Poppins'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/poppins-medium.woff') format('woff'); }
+@font-face { font-family: 'Poppins'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/poppins-semibold.woff') format('woff'); }
+@font-face { font-family: 'Poppins'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/poppins-bold.woff') format('woff'); }
+@font-face { font-family: 'Poppins'; font-style: normal; font-weight: 800; font-display: swap; src: url('../fonts/poppins-extrabold.woff') format('woff'); }
+@font-face { font-family: 'Chesscend Symbols'; font-style: normal; font-weight: 400; font-display: block; src: url('../fonts/chess-symbols.woff') format('woff'); unicode-range: U+2654-265F, U+FE0E; }
+
 :root {
   --bg-top: #FFF9EC;
   --bg-mid: #FFF1CF;
@@ -27,7 +35,7 @@
   --r-m: 18px;
   --r-l: 24px;
   --maxw: 1180px;
-  --chess: 'Noto Sans Symbols 2', 'Segoe UI Symbol', 'Apple Symbols', 'DejaVu Sans', sans-serif;
+  --chess: 'Chesscend Symbols', 'Noto Sans Symbols 2', 'Segoe UI Symbol', 'Apple Symbols', 'DejaVu Sans', sans-serif;
   --topbar-h: 72px;
 }
 
@@ -609,3 +617,11 @@ button.card:active, .tile:active { transform: scale(0.985); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+
+/* legal notice */
+.text-link { text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; font-weight: 600; word-break: break-word; }
+.text-link:hover { color: var(--gold-text); }
+.legal-fr { color: var(--muted); font-weight: 700; font-size: 0.6em; }
+.legal-block h2 { margin: 18px 0 6px; }
+.legal-block h2:first-child { margin-top: 0; }
+.legal-block .body + .body { margin-top: 8px; }

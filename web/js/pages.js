@@ -576,3 +576,50 @@ export function profilePage() {
     },
   };
 }
+
+/* ================================================================ LEGAL NOTICE / MENTIONS LÉGALES */
+const REPO = 'https://github.com/Sabriasna/Chesscend';
+const HOST_ADDR = 'GitHub, Inc., 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, United States';
+
+export function legalPage() {
+  const link = (href, text) => `<a class="text-link" href="${href}" target="_blank" rel="noopener">${text}</a>`;
+  const issues = link(`${REPO}/issues`, 'github.com/Sabriasna/Chesscend/issues');
+  const ghPrivacy = link('https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement', 'GitHub Privacy Statement');
+  return {
+    title: 'Legal notice',
+    sub: 'Legal notice',
+    tab: 'none',
+    html: `<div class="narrow legal">
+      <h1 class="page-title">Legal notice <span class="legal-fr">· Mentions légales</span></h1>
+      <p class="small">Last updated: 23 November 2026 · Dernière mise à jour : 23 novembre 2026</p>
+
+      <div class="card legal-block" lang="en">
+        <h2 class="h3">Publisher</h2>
+        <p class="body">Chesscend is a personal, non-commercial project published by a private individual. In line with Article 6, III, 2 of French law no. 2004-575 of 21 June 2004 (LCEN), the publisher's identity has been provided to the host.</p>
+        <p class="body"><b>Contact:</b> ${issues}</p>
+        <h2 class="h3">Host</h2>
+        <p class="body">GitHub Pages, provided by ${HOST_ADDR}. Website: ${link('https://github.com', 'github.com')}.</p>
+        <h2 class="h3">Your data</h2>
+        <p class="body">Chesscend has no accounts and collects no personal data. Your name, settings, games and progress are saved only in your own browser (local storage) and are never sent to us. You can erase them at any time by clearing this site's data in your browser.</p>
+        <p class="body">No cookies, no advertising, no analytics and no tracking. Fonts and images are served from this site: no request is made to Google or any other third party.</p>
+        <p class="body">Like any web host, GitHub records visitors' IP addresses for security purposes when a GitHub Pages site is visited. See the ${ghPrivacy}.</p>
+        <h2 class="h3">Intellectual property</h2>
+        <p class="body">The name Chesscend, its design, texts and code belong to their author. Fonts: Poppins and Noto Sans Symbols 2, under the SIL Open Font License.</p>
+      </div>
+
+      <div class="card legal-block mt" lang="fr">
+        <h2 class="h3">Éditeur</h2>
+        <p class="body">Chesscend est un projet personnel et non commercial, édité par un particulier. Conformément à l'article 6, III, 2 de la loi n° 2004-575 du 21 juin 2004 pour la confiance dans l'économie numérique (LCEN), l'identité de l'éditeur a été communiquée à l'hébergeur.</p>
+        <p class="body"><b>Contact :</b> ${issues}</p>
+        <h2 class="h3">Hébergeur</h2>
+        <p class="body">GitHub Pages, service de ${HOST_ADDR.replace('United States', 'États-Unis')}. Site : ${link('https://github.com', 'github.com')}.</p>
+        <h2 class="h3">Vos données</h2>
+        <p class="body">Chesscend n'a pas de comptes et ne collecte aucune donnée personnelle. Votre prénom, vos réglages, vos parties et votre progression sont enregistrés uniquement dans votre navigateur (stockage local) et ne nous sont jamais transmis. Vous pouvez les effacer à tout moment en supprimant les données de ce site dans votre navigateur.</p>
+        <p class="body">Aucun cookie, aucune publicité, aucune mesure d'audience, aucun pistage. Les polices et les images sont servies par ce site : aucune requête n'est envoyée à Google ni à un autre tiers.</p>
+        <p class="body">Comme tout hébergeur, GitHub enregistre l'adresse IP des visiteurs d'un site GitHub Pages pour des raisons de sécurité. Voir la ${link('https://docs.github.com/fr/site-policy/privacy-policies/github-general-privacy-statement', 'déclaration de confidentialité de GitHub')}.</p>
+        <h2 class="h3">Propriété intellectuelle</h2>
+        <p class="body">Le nom Chesscend, son design, ses textes et son code appartiennent à leur auteur. Polices : Poppins et Noto Sans Symbols 2, sous licence SIL Open Font License.</p>
+      </div>
+    </div>`,
+  };
+}
