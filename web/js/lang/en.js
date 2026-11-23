@@ -390,6 +390,9 @@ export default {
   'profile.haptics': 'Vibrations',
   'profile.haptics.help': 'Small vibration on every move (on phones that support it)',
   'profile.localNote': "Without an account, your name, settings and progress are saved in this browser only.",
+  'profile.save': "Save",
+  'profile.nameSaved': "Name saved",
+  'profile.saved': "Saved",
 
   // legal
   'legal.title': 'Legal notice',

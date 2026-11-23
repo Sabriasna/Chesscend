@@ -719,3 +719,9 @@ button.card:active, .tile:active { transform: scale(0.985); }
 .or-line::before, .or-line::after { content: ''; flex: 1; height: 1px; background: var(--card-border); }
 .auth-form.needs-username { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-pale), var(--shadow); }
 .auth-form.needs-username .username-hint { color: var(--gold-text); font-weight: 600; }
+
+/* Profile: name + Save button */
+.name-row { display: flex; gap: 10px; align-items: stretch; }
+.name-row .input { flex: 1; min-width: 0; }
+.name-row .pill { flex: none; }
+.name-row .pill:disabled { opacity: .35; cursor: default; box-shadow: none; }

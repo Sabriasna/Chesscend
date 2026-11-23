@@ -378,6 +378,9 @@ export default {
   'profile.haptics': 'Vibraciones',
   'profile.haptics.help': 'Pequeña vibración en cada jugada (en los teléfonos compatibles)',
   'profile.localNote': "Sin cuenta, tu nombre, tus ajustes y tu progreso se guardan solo en este navegador.",
+  'profile.save': "Guardar",
+  'profile.nameSaved': "Nombre guardado",
+  'profile.saved': "Guardado",
 
   'legal.title': 'Aviso legal',
   'legal.updated': 'Última actualización: 23 de noviembre de 2026',

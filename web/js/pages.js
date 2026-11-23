@@ -2,7 +2,7 @@
 // Every text comes from t() (see i18n.js and the lang/ folder).
 import { icon } from './icons.js';
 import {
-  avatar, badge, esc, goldPiece, goldScene, hero, piece, pill, progressBar, sectionHeader, segmented, tile,
+  avatar, badge, esc, goldPiece, goldScene, hero, piece, pill, progressBar, sectionHeader, segmented, tile, toast,
 } from './ui.js';
 import { BOT_RATING, ratingHistory, state, summarize, updateSettings } from './store.js';
 import { loadLeaderboard } from './online.js';
@@ -538,7 +538,10 @@ export function profilePage() {
       ${accountCard()}
       <div class="profile-top">${avatar(displayName(s.playerName), 88, 'var(--gold)')}<h1 class="page-title desk-only">${t('profile.title')}</h1></div>
       <p class="label" id="lbl-name">${t('profile.name')}</p>
-      <input class="input" id="name" maxlength="20" placeholder="${t('profile.namePlaceholder')}" value="${s.playerName === 'Player' ? '' : esc(s.playerName)}" autocomplete="off" aria-labelledby="lbl-name">
+      <form class="name-row" data-form="name">
+        <input class="input" id="name" maxlength="20" placeholder="${t('profile.namePlaceholder')}" value="${s.playerName === 'Player' ? '' : esc(s.playerName)}" autocomplete="off" aria-labelledby="lbl-name">
+        <button class="pill pill-dark pill-m" type="submit" id="save-name" disabled>${t('profile.save')}</button>
+      </form>
       <p class="label">${t('profile.language')}</p>
       ${segmented(LANGS.map((l) => ({ key: l.code, label: l.name })), lang(), 'set-lang')}
       <p class="label">${t('profile.theme')}</p>
@@ -552,18 +555,31 @@ export function profilePage() {
     </div>`,
     mount(el) {
       const input = el.querySelector('#name');
-      input.addEventListener('input', () => {
-        updateSettings({ playerName: input.value.slice(0, 20) || 'Player' });
-        const first = (input.value.trim() || displayName('Player')).charAt(0).toUpperCase();
+      const save = el.querySelector('#save-name');
+      const saved = () => (state.settings.playerName === 'Player' ? '' : state.settings.playerName);
+      input.addEventListener('input', () => (save.disabled = input.value.trim() === saved()));
+      el.querySelector('form[data-form="name"]').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = input.value.trim().slice(0, 20);
+        input.value = name;
+        // An empty name means the default name ("Player", shown in the visitor's language).
+        updateSettings({ playerName: name || 'Player' });
+        const first = (name || displayName('Player')).charAt(0).toUpperCase();
         document.querySelectorAll('.topbar .avatar, .profile-top .avatar').forEach((a) => (a.textContent = first));
+        save.disabled = true;
+        toast(t('profile.nameSaved'));
       });
-      // An empty name means the default name ("Player", shown in the visitor's language).
-      input.addEventListener('blur', () => !input.value.trim() && updateSettings({ playerName: 'Player' }));
-      el.querySelectorAll('.switch').forEach((c) => c.addEventListener('change', () => updateSettings({ [c.dataset.key]: c.checked })));
+      el.querySelectorAll('.switch').forEach((c) =>
+        c.addEventListener('change', () => {
+          updateSettings({ [c.dataset.key]: c.checked });
+          toast(t('profile.saved'), 1800);
+        }),
+      );
     },
     actions: {
       theme: (id, btn) => {
         updateSettings({ themeId: id });
+        toast(t('profile.saved'), 1800);
         btn.parentElement.querySelectorAll('.theme').forEach((b) => {
           b.classList.toggle('on', b === btn);
           b.setAttribute('aria-pressed', String(b === btn));
