@@ -2,7 +2,7 @@
  * Beginner coach: finds pieces in danger and writes friendly tips.
  * Pure functions, easy to test.
  */
-import { squareName } from './chess';
+import { squareName } from './chess.js';
 
 export const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 export const NAME = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };

@@ -34,3 +34,21 @@ Si Snack affiche un avertissement de version avec un lien « Update to… », cl
 | Leçons | `src/data/lessons.js` |
 | Puzzles | `src/data/puzzles.js` |
 | Force de l'ordinateur | `src/engine/ai.js` → `AI_LEVELS` |
+
+## Le site web (dossier `web/`)
+
+Une version site de Chesscend, responsive (ordinateur, tablette, téléphone), avec le même design et les mêmes onglets que l'appli. Le site et l'appli partagent le même moteur d'échecs, les mêmes leçons et les mêmes puzzles (`src/engine`, `src/data`) : une leçon modifiée change dans les deux.
+
+**Mettre le site en ligne gratuitement (GitHub Pages) :**
+1. Sur GitHub, ouvre le dépôt Chesscend → **Settings** → **Pages**.
+2. Dans « Branch », choisis **main** et le dossier **/ (root)**, puis **Save**.
+3. Après 1 à 2 minutes, le site est à l'adresse : `https://sabriasna.github.io/Chesscend/web/`
+
+| Je veux changer sur le site… | Fichier |
+|---|---|
+| Couleurs, tailles, mise en page | `web/css/style.css` (en haut : les couleurs) |
+| Textes des onglets | `web/js/pages.js` |
+| Page de partie | `web/js/game.js` |
+| Pages leçon et puzzle | `web/js/boards.js` |
+
+La progression (classement, leçons, puzzles, partie en cours) est enregistrée dans le navigateur de chaque visiteur.

@@ -2,12 +2,12 @@
  * Intelligence artificielle : recherche alpha-bêta (negamax) avec
  * approfondissement itératif, tri des coups et recherche de calme sur les prises.
  */
-import { Position, fileOf, rowOf } from './chess';
+import { Position, fileOf, rowOf } from './chess.js';
 export const AI_LEVELS = {
-    1: { label: 'Débutant', depth: 1, timeMs: 300, noise: 250 },
-    2: { label: 'Facile', depth: 2, timeMs: 600, noise: 60 },
-    3: { label: 'Moyen', depth: 3, timeMs: 1200, noise: 10 },
-    4: { label: 'Difficile', depth: 6, timeMs: 2500, noise: 0 },
+    1: { label: 'Beginner', depth: 1, timeMs: 300, noise: 250 },
+    2: { label: 'Easy', depth: 2, timeMs: 600, noise: 60 },
+    3: { label: 'Medium', depth: 3, timeMs: 1200, noise: 10 },
+    4: { label: 'Hard', depth: 6, timeMs: 2500, noise: 0 },
 };
 const VALUE = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
 // Tables de position (vue des Blancs, index 0 = a8). Valeurs classiques simplifiées.
