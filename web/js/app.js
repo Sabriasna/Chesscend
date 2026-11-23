@@ -1,7 +1,7 @@
 // Chesscend website: navigation (address after #), layout and shared actions.
 import { icon } from './icons.js';
-import { TABS, avatar, esc, infoModal, logo, closeModal } from './ui.js';
-import { clearSavedGame, loadSavedGame, state } from './store.js';
+import { TABS, avatar, esc, infoModal, logo, closeModal, openModal, pill } from './ui.js';
+import { clearSavedGame, isPersistent, loadSavedGame, state } from './store.js';
 import * as P from './pages.js';
 import { QUICK } from '../../src/data/timeControls.js';
 import { gamePage } from './game.js';
@@ -10,6 +10,7 @@ import { lessonPage, puzzlePage } from './boards.js';
 const app = document.getElementById('app');
 let current = null; // page currently shown
 let lastTab = 'home';
+let navigated = false;
 let pendingGame = null; // config of the next game to start
 
 const TAB_KEYS = TABS.map((t) => t.key);
@@ -30,11 +31,19 @@ export const nav = {
   resume() {
     const saved = loadSavedGame();
     if (!saved) return;
-    pendingGame = { config: saved.config, moves: saved.moves, clocks: saved.clocks };
+    pendingGame = saved;
     nav.go('game');
   },
   quick(tc = null) {
-    nav.startGame({ mode: 'ai', aiLevel: state.settings.preferredLevel, playerColor: 'w', timeControl: tc });
+    const config = { mode: 'ai', aiLevel: state.settings.preferredLevel, playerColor: 'w', timeControl: tc };
+    const saved = loadSavedGame();
+    if (!saved) return nav.startGame(config);
+    // Never throw away an unfinished game without asking.
+    const m = openModal(`<div class="sheet-icon">${icon('play-circle', 34)}</div><h3>You have an unfinished game</h3>
+      <p>${saved.moves.length} moves played. Resume it, or start a new game (the unfinished one will be replaced).</p>
+      <div class="sheet-actions">${pill('Resume my game', { icon: 'play', attrs: 'data-m="resume"' })}${pill('Start a new game', { variant: 'light', size: 'm', attrs: 'data-m="new"' })}</div>`);
+    m.el.querySelector('[data-m="resume"]').onclick = () => (m.close(), nav.resume());
+    m.el.querySelector('[data-m="new"]').onclick = () => (m.close(), nav.startGame(config));
   },
   bell() {
     infoModal('bell', 'No notifications yet', 'Game invitations and friend requests will appear here when online play arrives.');
@@ -68,7 +77,7 @@ function route(name) {
     if (g) return gamePage(g);
     // Page reloaded during a game: pick up the saved game
     const saved = loadSavedGame();
-    if (saved) return gamePage({ config: saved.config, moves: saved.moves, clocks: saved.clocks });
+    if (saved) return gamePage(saved);
     return null;
   }
   return null;
@@ -76,7 +85,7 @@ function route(name) {
 
 function header(activeTab) {
   const links = TABS.map(
-    (t) => `<a href="#${t.key}" class="nav-link ${t.key === activeTab ? 'on' : ''}">${icon(t.icon, 18)}<span>${t.label}</span></a>`,
+    (t) => `<a href="#${t.key}" class="nav-link ${t.key === activeTab ? 'on' : ''}" ${t.key === activeTab ? 'aria-current="page"' : ''}>${icon(t.icon, 18)}<span>${t.label}</span></a>`,
   ).join('');
   return `<header class="topbar"><div class="topbar-in">
     <button class="round-btn avatar-btn" data-go="profile" aria-label="Profile and settings">${avatar(state.settings.playerName, 44)}</button>
@@ -97,15 +106,15 @@ function backBar(title, right = '') {
 function tabBar(activeTab) {
   return `<nav class="tabbar" aria-label="Tabs">${TABS.map(
     (t) =>
-      `<a href="#${t.key}" class="tab ${t.key === activeTab ? 'on' : ''}"><span class="tab-ic">${icon(t.icon, 22)}</span><span>${t.label}</span></a>`,
+      `<a href="#${t.key}" class="tab ${t.key === activeTab ? 'on' : ''}" ${t.key === activeTab ? 'aria-current="page"' : ''}><span class="tab-ic">${icon(t.icon, 22)}</span><span>${t.label}</span></a>`,
   ).join('')}</nav>`;
 }
 
 const footer = () => `<footer class="footer"><div class="footer-in">
-  <div>${logo()}<p class="tag">PLAY • LEARN • ASCEND</p></div>
+  <div>${logo()}<p class="tag">PLAY • COMPETE • ASCEND</p></div>
   <div class="footer-links">${TABS.map((t) => `<a href="#${t.key}">${t.label}</a>`).join('')}<a href="#profile">Settings</a></div>
   <div class="footer-app">${icon('smartphone', 20)}<span>The Chesscend app for iPhone and Android is coming soon.</span></div>
-</div><p class="copy">© ${new Date().getFullYear()} Chesscend. Your progress is saved in this browser.</p></footer>`;
+</div><p class="copy">© ${new Date().getFullYear()} Chesscend. Your progress is saved in this browser only and is not synced between devices.${isPersistent() ? '' : ' <b>Storage is blocked in this browser: progress will be lost when you close the page.</b>'}</p></footer>`;
 
 function render() {
   const name = location.hash.slice(1) || 'home';
@@ -121,13 +130,17 @@ function render() {
   const activeTab = isTab ? name : page.tab ?? lastTab;
   document.body.classList.toggle('is-sub', !isTab);
   document.body.classList.toggle('is-wide', !!page.wide);
-  document.title = page.title ? `${page.title} · Chesscend` : 'Chesscend · Play, learn and ascend at chess';
+  document.title = page.title && page.title !== 'Home' ? `${page.title} · Chesscend` : 'Chesscend · Play. Compete. Ascend.';
   app.innerHTML = `${header(activeTab)}
     <main class="main ${page.cls ?? ''}">${page.sub ? backBar(page.sub, page.backRight ?? '') : ''}${page.html}</main>
     ${page.noFooter ? '' : footer()}
     ${isTab ? tabBar(activeTab) : ''}`;
   window.scrollTo(0, 0);
   page.mount?.(app.querySelector('.main'));
+  // Move keyboard / screen-reader focus to the new page, like a real page load.
+  if (navigated) app.querySelector('.main h1, .main .back-title')?.setAttribute('tabindex', '-1');
+  if (navigated) app.querySelector('.main h1, .main .back-title')?.focus({ preventScroll: true });
+  navigated = true;
 }
 
 /* Shared clicks: data-go="page" navigates, data-act="…" runs an action. */

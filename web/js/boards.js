@@ -3,7 +3,7 @@ import { icon } from './icons.js';
 import { badge, bindBoard, boardHTML, esc, openModal, piece, pill } from './ui.js';
 import { markLesson, markPuzzle, state, theme } from './store.js';
 import { nav } from './app.js';
-import { ALL_LESSONS } from '../../src/data/lessons.js';
+import { ALL_LESSONS, COURSES } from '../../src/data/lessons.js';
 import { PUZZLES } from '../../src/data/puzzles.js';
 import { Position, squareIndex } from '../../src/engine/chess.js';
 
@@ -43,7 +43,8 @@ export function lessonPage(lessonId) {
 
   const done = state.progress.lessonsDone.includes(lesson.id);
   const course = lesson.courseId;
-  const n = ALL_LESSONS.filter((l) => l.courseId === course).findIndex((l) => l.id === lesson.id) + 1;
+  const courseLessons = ALL_LESSONS.filter((l) => l.courseId === course);
+  const n = courseLessons.findIndex((l) => l.id === lesson.id) + 1;
 
   return {
     title: lesson.title,
@@ -54,7 +55,7 @@ export function lessonPage(lessonId) {
     html: `<div class="study-layout">
       <div class="board-col"><div class="board-slot"></div></div>
       <div class="study-text">
-        <p class="eyebrow">Lesson ${n} · ${course === 'basics' ? 'Chess Basics' : 'First Strategies'}</p>
+        <p class="eyebrow">Lesson ${n} of ${courseLessons.length} · ${esc(COURSES.find((c) => c.id === course)?.title ?? '')}</p>
         <h1 class="page-title">${esc(lesson.title)}</h1>
         <div class="card">${lesson.paragraphs.map((p) => `<p class="body">${esc(p)}</p>`).join('')}</div>
         <p class="tip">${icon('pointer', 18)} <span>Click any piece on the board to see where it can go.</span></p>

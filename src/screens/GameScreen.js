@@ -178,8 +178,9 @@ export default function GameScreen({ config, initialMoves, initialClocks, nav })
     if (entry) afterMove(entry);
   };
 
+  // No undo once the game is over: the result is already saved in the statistics.
   const canUndo =
-    !thinking && !override && game.history.length > 0 && (!isAi || game.history.length >= (config.playerColor === 'w' ? 1 : 2));
+    !thinking && !result.over && game.history.length > 0 && (!isAi || game.history.length >= (config.playerColor === 'w' ? 1 : 2));
 
   const undo = () => {
     if (!canUndo) return;

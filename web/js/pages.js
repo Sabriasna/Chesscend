@@ -3,7 +3,9 @@ import { icon } from './icons.js';
 import {
   avatar, badge, esc, goldPiece, goldScene, hero, piece, pill, progressBar, sectionHeader, segmented, tile,
 } from './ui.js';
-import { BOT_RATING, state, summarize, updateSettings } from './store.js';
+import { BOT_RATING, isPersistent, ratingHistory, state, summarize, updateSettings } from './store.js';
+import { loadLeaderboard } from './online.js';
+import { leaderboardView } from './leaderboard.js';
 import { nav } from './app.js';
 import { ALL_LESSONS, COURSES } from '../../src/data/lessons.js';
 import { PUZZLES } from '../../src/data/puzzles.js';
@@ -40,7 +42,7 @@ export function homePage() {
     html: `
     <section class="home-hero">
       <div class="home-hero-text">
-        <p class="tagline">PLAY  •  LEARN  •  ASCEND</p>
+        <p class="tagline">PLAY  •  COMPETE  •  ASCEND</p>
         <h1 class="display">Chess, made simple<br>and beautiful.</h1>
         <p class="lead">Play the computer or a friend, learn with short lessons and puzzles, and let a friendly coach explain your mistakes.</p>
         <div class="cta-row">
@@ -56,7 +58,7 @@ export function homePage() {
         <button class="card row-card player" data-go="ranking">
           ${avatar(settings.playerName, 56, 'var(--gold-light)')}
           <span class="grow"><strong class="h3 ellipsis">${esc(settings.playerName)}</strong>
-            <span class="inline">${icon('bar-chart-2', 15)} <span class="elo">${stats.rating} rating</span></span></span>
+            <span class="inline">${icon('bar-chart-2', 15)} <span class="elo">${stats.rating} <span class="hide-sm">Computer </span>Rating</span></span></span>
           <span class="divider"></span>
           <span class="games"><b>${s.played}</b><span class="small">games</span></span>
           ${icon('chevron-right', 22)}
@@ -88,11 +90,20 @@ export function homePage() {
       </div>
     </div>
 
-    <section class="features">
-      <div class="feature">${icon('robot', 28)}<h3>4 computer levels</h3><p>From Beginner to Hard: start easy, get your first wins, then raise the challenge.</p></div>
-      <div class="feature">${icon('bulb', 28)}<h3>A friendly coach</h3><p>It warns you when a piece is in danger and gives simple tips during the game.</p></div>
-      <div class="feature">${icon('school', 28)}<h3>Learn step by step</h3><p>${ALL_LESSONS.length} interactive lessons and ${PUZZLES.length} checkmate puzzles for beginners.</p></div>
-    </section>`,
+    ${sectionHeader('Your Progress', 'Ranking', 'data-go="ranking"')}
+    <div class="grid cols-3 progress-row">
+      <button class="card prog-card" data-go="ranking">${icon('robot', 24)}<span class="small">Computer Rating</span><b class="num">${stats.rating}</b>
+        <span class="small">${s.played ? `${s.wins} win${s.wins === 1 ? '' : 's'} in ${s.played} game${s.played === 1 ? '' : 's'}` : 'Play a game to start climbing'}</span></button>
+      <button class="card prog-card" data-go="learn">${icon('school', 24)}<span class="small">Lessons</span><b class="num">${progress.lessonsDone.length}<small> / ${ALL_LESSONS.length}</small></b>
+        <span class="small">${nextLesson ? `Next: ${esc(nextLesson.title)}` : 'All courses completed'}</span></button>
+      <button class="card prog-card" data-go="${nextPuzzle ? `puzzle-${nextPuzzle.id}` : 'puzzles'}">${icon('puzzle', 24)}<span class="small">Puzzles</span><b class="num">${progress.puzzlesSolved.length}<small> / ${PUZZLES.length}</small></b>
+        <span class="small">${nextPuzzle ? `Next: ${esc(nextPuzzle.title)}` : 'All puzzles solved'}</span></button>
+    </div>
+    <div class="card row-card compete mt">
+      ${icon('crown', 30, 'gold')}
+      <span class="grow"><strong class="h3">Compete online</strong><span class="small">Ranked games against real players and the Global leaderboard are not available yet. Your Computer Rating already tracks your progress.</span></span>
+      ${pill('See rankings', { size: 'm', variant: 'light', attrs: 'data-go="ranking"' })}
+    </div>`,
   };
 }
 
@@ -105,10 +116,11 @@ export function playPage() {
     title: 'Play',
     html: `
     ${hero('Play', 'Choose your game and challenge the computer or a friend.', ['p', 'n'])}
+    <p class="mode-line">${icon('info', 15)} <span><b>Quick games:</b> vs Computer (${AI_LEVELS[level].label}) · you play White · <b>counts for your Computer Rating</b>. Change the level below, or pick colour and clock in Custom Game.</span></p>
     <div class="tiles tiles-3">${quickTiles(true)}</div>
     <div class="tiles tiles-3 mt">
       ${tile({ ic: 'swords', label: 'Play a Friend', sub: 'Same device', attrs: 'data-go="setup-friend"' })}
-      ${tile({ ic: 'users', label: 'Find Opponent', sub: 'Online', soon: true, attrs: 'data-act="soon" data-arg="Online play"' })}
+      ${tile({ ic: 'users', label: 'Find Opponent', sub: 'Online · ranked', soon: true, attrs: 'data-act="soon" data-arg="Online play"' })}
       ${tile({ ic: 'sliders', label: 'Custom Game', sub: 'Your rules', attrs: 'data-go="setup"' })}
     </div>
 
@@ -116,7 +128,7 @@ export function playPage() {
       <div class="card">
         <div class="card-head">${icon('robot', 26)}<strong class="h3 grow">Computer level</strong><span class="small">for quick games</span></div>
         <div class="chips">${[1, 2, 3, 4]
-          .map((l) => `<button class="chip ${l === level ? 'on' : ''}" data-act="level" data-arg="${l}">${AI_LEVELS[l].label}</button>`)
+          .map((l) => `<button class="chip ${l === level ? 'on' : ''}" aria-pressed="${l === level}" data-act="level" data-arg="${l}">${AI_LEVELS[l].label}</button>`)
           .join('')}</div>
         ${pill('Start a Game', { icon: 'play', attrs: 'data-act="quick"', cls: 'block mt' })}
       </div>
@@ -125,12 +137,20 @@ export function playPage() {
         <div class="card stat-row">
           <div class="stat">${icon('trophy', 28, 'gold')}<b class="num">${s.wins}</b><span class="small">Wins</span></div>
           <span class="vsep"></span>
-          <div class="stat">${icon('bar-chart-2', 24)}<b class="num">${stats.rating}</b><span class="small">Rating</span></div>
+          <div class="stat">${icon('bar-chart-2', 24)}<b class="num">${stats.rating}</b><span class="small">Computer Rating</span></div>
           <span class="vsep"></span>
           <div class="stat">${icon(s.week >= 0 ? 'trending-up' : 'trending-down', 24, s.week >= 0 ? 'gold' : 'red')}<b class="num">${s.week > 0 ? `+${s.week}` : s.week}</b><span class="small">This week</span></div>
         </div>
       </div>
-    </div>`,
+    </div>
+
+    ${sectionHeader('Game modes')}
+    <div class="card list modes">
+      <div class="list-row">${icon('robot', 22)}<span class="grow"><strong class="td">vs Computer</strong><span class="small">4 levels, any colour, with or without a clock.</span></span>${badge('Computer Rating', 'green')}</div>
+      <div class="list-row">${icon('swords', 22)}<span class="grow"><strong class="td">vs a Friend, same device</strong><span class="small">Take turns on this screen. The board can flip for each player.</span></span>${badge('Unrated')}</div>
+      <div class="list-row is-off">${icon('users', 22)}<span class="grow"><strong class="td">Online, ranked</strong><span class="small">Against real players, for the Online Rating and the Global ranking.</span></span>${badge('Not available yet', 'dark')}</div>
+    </div>
+    <p class="small mt-s">${icon('clock', 13)} Casual games pause the clock when you leave the page, and you can pick up where you stopped.</p>`,
     actions: {
       level: (l) => {
         updateSettings({ preferredLevel: +l });
@@ -146,9 +166,29 @@ const REASONS = {
   material: 'Insufficient material', timeout: 'Time out', resign: 'Resignation',
 };
 
-export function rankingPage() {
+let rankingTab = 'me';
+
+/** Small line chart of the Computer Rating, drawn from the saved results only. */
+function sparkline(points) {
+  if (points.length < 2) return '<p class="small spark-empty">Play rated games against the computer to see your progression here.</p>';
+  const w = 300;
+  const h = 70;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const span = Math.max(1, max - min);
+  const xy = points.map((p, i) => [((i / (points.length - 1)) * (w - 8) + 4).toFixed(1), (h - 6 - ((p - min) / span) * (h - 12)).toFixed(1)]);
+  const line = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ');
+  const [lx, ly] = xy[xy.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Computer Rating over your last ${points.length - 1} rated games: from ${points[0]} to ${points[points.length - 1]}">
+    <path d="${line} L${w - 4} ${h} L4 ${h} Z" fill="rgba(224,168,46,0.16)"/><path d="${line}" fill="none" stroke="#A8741A" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+    <circle cx="${lx}" cy="${ly}" r="4" fill="#111"/></svg>
+    <div class="spark-scale"><span>${min}</span><span>${max}</span></div>`;
+}
+
+function myStats() {
   const { settings, stats } = state;
   const s = summarize();
+  const hist = ratingHistory().slice(-30);
   const ai = stats.games.filter((g) => g.mode === 'ai');
   const record = [1, 2, 3, 4].map((l) => {
     const g = ai.filter((x) => x.level === l);
@@ -159,7 +199,6 @@ export function rankingPage() {
       losses: g.filter((x) => x.result === 'loss').length,
     };
   });
-
   const side = (value, label, color, ic) => `<div class="podium-side">
       <div class="side-ring" style="border-color:${color}"><b>${value}</b></div>
       <div class="base" style="background:${color}">${icon(ic, 18)}</div>
@@ -169,27 +208,33 @@ export function rankingPage() {
     ? `<div class="card list">${stats.games
         .slice(0, 8)
         .map((g) => {
-          const b =
-            g.mode === 'ai'
-              ? badge(
-                  g.result === 'win' ? `Win ▲ ${g.change}` : g.result === 'loss' ? `Loss ▼ ${Math.abs(g.change)}` : `Draw ${g.change >= 0 ? '+' : ''}${g.change}`,
-                  g.result === 'win' ? 'green' : g.result === 'loss' ? 'red' : 'gold',
-                )
-              : badge(g.result === 'draw' ? 'Draw' : g.result === 'white' ? 'White won' : 'Black won');
+          let b;
+          if (g.mode !== 'ai') b = badge(g.result === 'draw' ? 'Draw' : g.result === 'white' ? 'White won' : 'Black won');
+          else {
+            const word = g.result === 'win' ? 'Win' : g.result === 'loss' ? 'Loss' : 'Draw';
+            const tone = g.result === 'win' ? 'green' : g.result === 'loss' ? 'red' : 'gold';
+            b = g.rated ? badge(`${word} ${g.change > 0 ? '▲ +' : g.change < 0 ? '▼ ' : '± '}${g.change}`, tone) : badge(`${word} · unrated`, tone);
+          }
           return `<div class="list-row">${icon(g.mode === 'ai' ? 'cpu' : 'users', 18)}
             <span class="grow"><strong class="td">${g.mode === 'ai' ? `vs ${esc(AI_LEVELS[g.level]?.label ?? 'Computer')}` : 'Friend game'}</strong>
-            <span class="small">${REASONS[g.reason] ?? ''} · ${g.moves} moves · ${new Date(g.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span></span>${b}</div>`;
+            <span class="small">${REASONS[g.reason] ?? ''} · ${g.moves} moves${g.date ? ` · ${new Date(g.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span></span>${b}</div>`;
         })
         .join('')}</div>`
-    : `<div class="card empty">${goldPiece('p', 40)}<p>No games yet. Play your first game!</p>${pill('Play now', { size: 'm', attrs: 'data-act="quick"' })}</div>`;
+    : `<div class="card state-card"><div class="state-art">${goldPiece('p', 44)}</div><h3 class="state-title">No games yet</h3><p class="state-text">Your results will appear here after your first game.</p><div class="state-actions">${pill('Start Playing', { icon: 'play', size: 'm', attrs: 'data-act="quick"' })}</div></div>`;
 
-  return {
-    title: 'Ranking',
-    html: `
-    ${hero('Ranking', 'Track your progress game after game.', ['n', 'k'], 96)}
-    <div class="narrow-center">
-      ${segmented([{ key: 'me', label: 'My stats' }, { key: 'global', label: 'Global', disabled: true }, { key: 'friends', label: 'Friends', disabled: true }], 'me', 'noop')}
-      <p class="small center mt-s">Global and friends rankings arrive with online play.</p>
+  return `
+    <div class="grid cols-2 rating-cards">
+      <div class="card rating-card">
+        <div class="card-head">${icon('robot', 24)}<strong class="h3 grow">Computer Rating</strong>${badge('Active', 'green')}</div>
+        <div class="rating-big"><b>${stats.rating}</b><span class="small">best ${s.best} · ${s.week > 0 ? '+' : ''}${s.week} this week</span></div>
+        ${sparkline(hist)}
+        <p class="small">Your progress against the computer. Only rated games count: a game where a move was taken back is unrated.</p>
+      </div>
+      <div class="card rating-card">
+        <div class="card-head">${icon('users', 24)}<strong class="h3 grow">Online Rating</strong>${badge('Not available yet', 'gold')}</div>
+        <div class="rating-big"><b class="muted-num">—</b><span class="small">Not rated</span></div>
+        <p class="small">Earned in ranked games against real players, checked by the server. It will be completely separate from your Computer Rating. Online play is not live yet.</p>
+      </div>
     </div>
     <div class="podium">
       ${side(s.wins, 'Wins', 'var(--silver)', 'trophy')}
@@ -198,19 +243,20 @@ export function rankingPage() {
         <div class="laurel">${icon('leaf', 30, 'gold leaf-l')}${avatar(settings.playerName, 104, 'var(--gold)')}${icon('leaf', 30, 'gold leaf-r')}</div>
         <div class="base main-base">${stats.rating}</div>
         <strong class="h3 ellipsis">${esc(settings.playerName)}</strong>
-        <span class="small">Rating vs computer</span>
+        <span class="small">Computer Rating</span>
       </div>
       ${side(`${s.winRate}%`, 'Win rate', 'var(--bronze)', 'percent')}
     </div>
     <div class="card totals">
-      <div><b class="num">${s.played}</b><span class="small">Games</span></div>
+      <div><b class="num">${s.played}</b><span class="small">Games vs computer</span></div>
       <div><b class="num green">${s.wins}</b><span class="small">Wins</span></div>
       <div><b class="num">${s.draws}</b><span class="small">Draws</span></div>
       <div><b class="num red">${s.losses}</b><span class="small">Losses</span></div>
     </div>
+    ${s.friendGames ? `<p class="small center mt-s">+ ${s.friendGames} game${s.friendGames > 1 ? 's' : ''} with a friend on this device (not rated)</p>` : ''}
     <div class="grid cols-2">
       <div>${sectionHeader('Record vs Computer')}
-        <div class="card list"><table class="table"><thead><tr><th class="left">Level</th><th>Rating</th><th>W</th><th>D</th><th>L</th></tr></thead><tbody>
+        <div class="card list"><table class="table"><caption class="sr-only">Wins, draws and losses against each computer level</caption><thead><tr><th class="left" scope="col">Level</th><th scope="col">Rating</th><th scope="col"><abbr title="Wins">W</abbr></th><th scope="col"><abbr title="Draws">D</abbr></th><th scope="col"><abbr title="Losses">L</abbr></th></tr></thead><tbody>
         ${record
           .map(
             (r) => `<tr><td class="left"><span class="inline">${icon('robot', 20)} ${AI_LEVELS[r.level].label}</span></td><td>${BOT_RATING[r.level]}</td>
@@ -220,38 +266,110 @@ export function rankingPage() {
         </tbody></table></div>
       </div>
       <div>${sectionHeader('Recent Games')}${recent}</div>
-    </div>`,
-    actions: { noop: () => {} },
+    </div>
+    <p class="small center mt-l">${icon('info', 13)} Your statistics are saved in this browser only. They are not synced to other devices.</p>`;
+}
+
+export function rankingPage() {
+  let root;
+  const tabs = () =>
+    segmented(
+      [
+        { key: 'me', label: 'My stats' },
+        { key: 'global', label: 'Global' },
+        { key: 'friends', label: 'Friends' },
+      ],
+      rankingTab,
+      'rtab',
+      'Ranking views',
+    );
+  const intro = {
+    me: 'Your Computer Rating and results, saved on this device.',
+    global: 'The best players on Chesscend, ranked by Online Rating.',
+    friends: 'You and your friends, ranked by Online Rating.',
+  };
+  async function fill() {
+    const body = root.querySelector('.rank-body');
+    if (rankingTab === 'me') {
+      body.innerHTML = myStats();
+      return;
+    }
+    const kind = rankingTab;
+    body.innerHTML = leaderboardView(kind, { status: 'loading' });
+    const res = await loadLeaderboard(kind);
+    if (rankingTab === kind && root.isConnected) body.innerHTML = leaderboardView(kind, res);
+  }
+  const draw = () => {
+    root.querySelector('.rank-tabs').innerHTML = tabs();
+    root.querySelector('.rank-intro').textContent = intro[rankingTab];
+    fill();
+  };
+  return {
+    title: 'Ranking',
+    html: `
+    ${hero('Ranking', 'Track your progress game after game.', ['n', 'k'], 96)}
+    <div class="narrow-center"><div class="rank-tabs">${tabs()}</div><p class="small center mt-s rank-intro">${intro[rankingTab]}</p></div>
+    <div class="rank-body mt" role="tabpanel"></div>`,
+    mount(el) {
+      root = el;
+      fill();
+    },
+    actions: {
+      rtab: (k) => {
+        rankingTab = k;
+        draw();
+      },
+      'lb-retry': () => fill(),
+    },
   };
 }
 
 /* ================================================================ COMMUNITY */
-const UPCOMING = [
-  { ic: 'user-plus', title: 'Play with friends online', text: 'Send an invitation code and play from anywhere.' },
-  { ic: 'search', title: 'Find an opponent', text: 'Get matched with players of your level.' },
-  { ic: 'shield', title: 'Clubs and events', text: 'Join a club, take part in friendly tournaments.' },
-];
 
 export function communityPage() {
+  // Honest empty states: these need player accounts and a server, which do not exist yet.
+  const SECTIONS = [
+    { id: 'players', ic: 'users', title: 'Players', text: 'Find players of your level and follow their progress.', need: 'Needs player accounts.' },
+    { id: 'friends', ic: 'user-plus', title: 'Friends', text: 'Add friends, invite them with a code and compare your rankings.', need: 'Needs player accounts.' },
+    { id: 'clubs', ic: 'shield', title: 'Clubs & events', text: 'Join a club and take part in friendly tournaments.', need: 'Needs accounts and online play.' },
+    { id: 'discussions', ic: 'message-circle', title: 'Discussions', text: 'Ask questions, share games and tips with other members.', need: 'Needs accounts and moderation.' },
+  ];
   return {
     title: 'Community',
     html: `
     ${hero('Community', 'Connect, share and grow with other chess players.', ['p', 'n'])}
     <div class="tiles tiles-4">
-      ${tile({ ic: 'users', label: 'Players', soon: true, attrs: 'data-act="soon" data-arg="Players"' })}
-      ${tile({ ic: 'message-circle', label: 'Forums', soon: true, attrs: 'data-act="soon" data-arg="Forums"' })}
-      ${tile({ ic: 'shield', label: 'Clubs', soon: true, attrs: 'data-act="soon" data-arg="Clubs"' })}
-      ${tile({ ic: 'calendar', label: 'Events', soon: true, attrs: 'data-act="soon" data-arg="Events"' })}
+      ${tile({ ic: 'users', label: 'Players', attrs: 'data-act="jump" data-arg="players"' })}
+      ${tile({ ic: 'user-plus', label: 'Friends', attrs: 'data-act="jump" data-arg="friends"' })}
+      ${tile({ ic: 'shield', label: 'Clubs', attrs: 'data-act="jump" data-arg="clubs"' })}
+      ${tile({ ic: 'message-circle', label: 'Forums', attrs: 'data-act="jump" data-arg="discussions"' })}
     </div>
-    ${sectionHeader('Coming Soon')}
-    <div class="grid cols-3 upcoming">
-      ${UPCOMING.map((u) => `<div class="card up-card"><span class="round-ic">${icon(u.ic, 26)}</span><strong class="h3">${u.title}</strong><span class="small">${u.text}</span></div>`).join('')}
+    <div class="card row-card tinted mt-l community-note">
+      ${icon('info', 24)}
+      <span class="grow"><strong class="h3">The Chesscend community is getting ready</strong>
+      <span class="small">Player accounts are not open yet, so there are no members, posts or clubs to show. Nothing here is made up: these spaces will fill with real players when accounts launch.</span></span>
+    </div>
+    <div class="grid cols-2 mt">
+      ${SECTIONS.map(
+        (c) => `<section class="card comm-card" id="c-${c.id}" tabindex="-1" aria-labelledby="h-${c.id}">
+          <div class="card-head"><span class="round-ic">${icon(c.ic, 24)}</span><h2 class="h3 grow" id="h-${c.id}">${c.title}</h2>${badge('Not available yet', 'dark')}</div>
+          <p class="body">${c.text}</p>
+          <p class="small empty-line">${icon('clock', 13)} No ${c.id === 'clubs' ? 'clubs' : c.id === 'discussions' ? 'discussions' : c.id} yet. ${c.need}</p>
+        </section>`,
+      ).join('')}
     </div>
     <div class="card row-card tinted mt-l">
       ${icon('crown', 34)}
       <span class="grow"><strong class="h3">Meanwhile, play a friend</strong><span class="small">Share the screen and play on the same device.</span></span>
       ${pill('Play', { size: 'm', attrs: 'data-go="setup-friend"' })}
     </div>`,
+    actions: {
+      jump: (id) => {
+        const el = document.getElementById(`c-${id}`);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el?.focus({ preventScroll: true });
+      },
+    },
   };
 }
 
@@ -364,7 +482,7 @@ export function setupPage(initialMode) {
         ? `<p class="label">LEVEL</p>
       <div class="card options">${[1, 2, 3, 4]
         .map(
-          (l) => `<button class="option ${l === st.level ? 'on' : ''}" data-act="lvl" data-arg="${l}"><span class="radio"></span>
+          (l) => `<button class="option ${l === st.level ? 'on' : ''}" aria-pressed="${l === st.level}" data-act="lvl" data-arg="${l}"><span class="radio"></span>
           <span class="grow"><strong class="h3">${AI_LEVELS[l].label}</strong><span class="small">${LEVEL_HELP[l]}</span></span></button>`,
         )
         .join('')}</div>
@@ -373,8 +491,16 @@ export function setupPage(initialMode) {
         : ''
     }
     <p class="label">CLOCK</p>
-    <div class="chips">${TIME_CONTROLS.map((t, i) => `<button class="chip outline ${i === st.tc ? 'on' : ''}" data-act="tc" data-arg="${i}">${t.label}</button>`).join('')}</div>
-    ${nav.saved ? '<p class="small center mt-l">Your unfinished game will be replaced.</p>' : ''}
+    <div class="chips">${TIME_CONTROLS.map((t, i) => `<button class="chip outline ${i === st.tc ? 'on' : ''}" aria-pressed="${i === st.tc}" data-act="tc" data-arg="${i}">${t.label}</button>`).join('')}</div>
+    <p class="label">SUMMARY</p>
+    <div class="card summary">
+      <div><span class="small">Opponent</span><b>${st.mode === 'ai' ? `Computer · ${AI_LEVELS[st.level].label}` : 'Friend on this device'}</b></div>
+      <div><span class="small">You play</span><b>${st.mode === 'ai' ? { w: 'White', b: 'Black', random: 'Random colour' }[st.color] : 'Both sides, in turn'}</b></div>
+      <div><span class="small">Clock</span><b>${TIME_CONTROLS[st.tc].label}</b></div>
+      <div><span class="small">Rating</span><b>${st.mode === 'ai' ? 'Counts for your Computer Rating' : 'Unrated'}</b></div>
+    </div>
+    <p class="small mt-s">${icon('info', 13)} ${st.mode === 'ai' ? 'Taking back a move makes the game unrated. ' : ''}${TIME_CONTROLS[st.tc].tc ? 'The clock pauses if you leave the page.' : ''}</p>
+    ${nav.saved ? '<p class="small center mt-l warn-line">Starting will replace your unfinished game.</p>' : ''}
     ${pill('Start the Game', { icon: 'play', attrs: 'data-act="start"', cls: 'block mt-l' })}`;
   const refresh = () => (root.querySelector('.setup-body').innerHTML = body());
   return {
@@ -410,7 +536,7 @@ export function profilePage() {
   const themes = THEMES.map((t) => {
     const sq = (i) =>
       `<span style="background:${i === 0 || i === 3 ? t.light : t.dark}">${i === 0 ? piece('n', 'b', t) : i === 3 ? piece('q', 'w', t) : ''}</span>`;
-    return `<button class="theme ${t.id === s.themeId ? 'on' : ''}" data-act="theme" data-arg="${t.id}">
+    return `<button class="theme ${t.id === s.themeId ? 'on' : ''}" aria-pressed="${t.id === s.themeId}" data-act="theme" data-arg="${t.id}">
       <span class="mini-board" style="background:${t.frame}"><span>${[0, 1, 2, 3].map(sq).join('')}</span></span>
       <span class="theme-name">${t.name}</span></button>`;
   }).join('');
@@ -442,7 +568,10 @@ export function profilePage() {
     actions: {
       theme: (id, btn) => {
         updateSettings({ themeId: id });
-        btn.parentElement.querySelectorAll('.theme').forEach((b) => b.classList.toggle('on', b === btn));
+        btn.parentElement.querySelectorAll('.theme').forEach((b) => {
+          b.classList.toggle('on', b === btn);
+          b.setAttribute('aria-pressed', String(b === btn));
+        });
       },
     },
   };

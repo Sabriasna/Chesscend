@@ -1,6 +1,6 @@
 // Building blocks of the site (same look as the app's components).
 import { icon } from './icons.js';
-import { fileOf, rowOf } from '../../src/engine/chess.js';
+import { fileOf, rowOf, squareName } from '../../src/engine/chess.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -56,7 +56,7 @@ export function tile({ ic, glyph, label, sub, dark, soon, attrs = '' }) {
   const art = glyph ? `<span class="tile-glyph">${FILLED[glyph]}</span>` : icon(ic, 28);
   return `<button class="tile ${dark ? 'tile-dark' : 'card'} ${soon ? 'is-soon' : ''}" ${attrs}>
     ${art}<span class="tile-label">${esc(label)}</span>${sub ? `<span class="tile-sub">${esc(sub)}</span>` : ''}
-    ${soon ? badge('Soon', 'gold', 'corner') : ''}
+    ${soon ? `${badge('Soon', 'gold', 'corner')}<span class="sr-only">, not available yet</span>` : ''}
   </button>`;
 }
 
@@ -69,12 +69,14 @@ export function sectionHeader(title, action, attrs = '') {
 }
 
 /** items: [{ key, label, disabled }] */
-export function segmented(items, value, act) {
-  return `<div class="segment">${items
-    .map(
-      (it) =>
-        `<button class="seg ${it.key === value ? 'on' : ''}" data-act="${act}" data-arg="${it.key}" ${it.disabled ? 'disabled' : ''}>${esc(it.label)}${it.disabled ? icon('lock', 12) : ''}</button>`,
-    )
+export function segmented(items, value, act, label = '') {
+  const tabs = !!label; // used as tabs (Ranking) or as a choice (Custom Game)
+  return `<div class="segment" role="${tabs ? 'tablist' : 'group'}" ${label ? `aria-label="${esc(label)}"` : ''}>${items
+    .map((it) => {
+      const on = it.key === value;
+      const state = tabs ? `role="tab" aria-selected="${on}"` : `aria-pressed="${on}"`;
+      return `<button class="seg ${on ? 'on' : ''}" ${state} data-act="${act}" data-arg="${it.key}" ${it.disabled ? 'disabled' : ''}>${esc(it.label)}${it.disabled ? icon('lock', 12) : ''}</button>`;
+    })
     .join('')}</div>`;
 }
 
@@ -90,6 +92,7 @@ export function piece(type, color, theme) {
 }
 
 const FILES = 'abcdefgh';
+const PIECE_NAME = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' };
 
 /**
  * Board HTML. opts: board, theme, orientation, selected, targets, lastMove, checkSquare, danger, showCoordinates
@@ -113,11 +116,24 @@ export function boardHTML(o) {
       if (o.showCoordinates && vr === 7) inner += `<span class="coord file">${FILES[fileOf(index)]}</span>`;
       if (p) inner += piece(p.type, p.color, t);
       if (isTarget) inner += p ? '<span class="ov ov-ring"></span>' : '<span class="ov ov-dot"><i></i></span>';
-      cells.push(`<div class="sq ${light ? 'l' : 'd'}" data-sq="${index}">${inner}</div>`);
+      // Spoken description for screen readers (never only a colour).
+      let label = squareName(index);
+      if (p) label += `, ${p.color === 'w' ? 'white' : 'black'} ${PIECE_NAME[p.type]}`;
+      if (o.selected === index) label += ', selected';
+      if (isTarget) label += p ? ', can be captured' : ', possible move';
+      if (o.checkSquare === index) label += ', in check';
+      if (o.danger.includes(index)) label += ', in danger';
+      if (isLast) label += ', last move';
+      const focusable = index === (o.selected ?? (o.orientation === 'w' ? 52 : 12));
+      cells.push(
+        `<div class="sq ${light ? 'l' : 'd'}" data-sq="${index}" role="gridcell" aria-label="${label}" tabindex="${focusable ? 0 : -1}">${inner}</div>`,
+      );
     }
   }
   const vars = `--light:${t.light};--dark:${t.dark};--frame:${t.frame};--last:${t.lastMove};--sel:${t.selected};--hint:${t.hint};--check:${t.check};--danger:${t.danger}`;
-  return `<div class="board-frame" style="${vars}"><div class="board">${cells.join('')}</div></div>`;
+  const rowsHtml = [];
+  for (let r = 0; r < 8; r++) rowsHtml.push(`<div class="brow" role="row">${cells.slice(r * 8, r * 8 + 8).join('')}</div>`);
+  return `<div class="board-frame" style="${vars}"><div class="board" role="grid" aria-label="Chessboard. Use the arrow keys to move between squares and Enter to pick or drop a piece.">${rowsHtml.join('')}</div></div>`;
 }
 
 /**
@@ -126,6 +142,45 @@ export function boardHTML(o) {
  */
 export function bindBoard(root, h) {
   const boardEl = () => root.querySelector('.board');
+  // Keyboard: arrows move between squares, Enter / Space acts like a click.
+  let kbSq = null;
+  const cellAt = (sq) => root.querySelector(`[data-sq="${sq}"]`);
+  const focusSq = (sq) => {
+    root.querySelectorAll('.sq[tabindex="0"]').forEach((c) => c.setAttribute('tabindex', '-1'));
+    const c = cellAt(sq);
+    if (!c) return;
+    c.setAttribute('tabindex', '0');
+    c.focus({ preventScroll: true });
+    kbSq = sq;
+  };
+  // The board is redrawn after each move: keep the keyboard focus on the same square.
+  new MutationObserver(() => {
+    if (kbSq === null) return;
+    const active = document.activeElement;
+    if (active && root.contains(active)) return;
+    if (!active || active === document.body) focusSq(kbSq);
+  }).observe(root, { childList: true });
+  root.onkeydown = (e) => {
+    const cell = e.target.closest?.('.sq');
+    if (!cell) return;
+    const cells = [...root.querySelectorAll('.sq')];
+    const i = cells.indexOf(cell);
+    const moveBy = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -8, ArrowDown: 8 }[e.key];
+    if (moveBy !== undefined) {
+      e.preventDefault();
+      const j = i + moveBy;
+      if (j < 0 || j > 63 || (Math.abs(moveBy) === 1 && Math.floor(j / 8) !== Math.floor(i / 8))) return;
+      focusSq(+cells[j].dataset.sq);
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      kbSq = +cell.dataset.sq;
+      h.onSquare(kbSq);
+      focusSq(kbSq);
+    }
+  };
+  root.addEventListener('focusout', (e) => {
+    if (!root.contains(e.relatedTarget) && e.relatedTarget) kbSq = null;
+  });
   const sqFromPoint = (x, y) => {
     const el = document.elementFromPoint(x, y)?.closest?.('.sq');
     return el && root.contains(el) ? +el.dataset.sq : null;
@@ -181,17 +236,44 @@ export function openModal(html, { dismissable = true, onClose } = {}) {
   closeModal();
   const wrap = document.createElement('div');
   wrap.className = 'backdrop';
-  wrap.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  wrap.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" tabindex="-1">${html}</div>`;
+  const opener = document.activeElement;
   document.body.appendChild(wrap);
-  requestAnimationFrame(() => wrap.classList.add('show'));
+  const sheet = wrap.querySelector('.sheet');
+  const title = sheet.querySelector('h3');
+  if (title) {
+    title.id = `dlg-${Date.now()}`;
+    sheet.setAttribute('aria-labelledby', title.id);
+  }
+  requestAnimationFrame(() => {
+    wrap.classList.add('show');
+    (sheet.querySelector('button') ?? sheet).focus({ preventScroll: true });
+  });
   const close = () => {
     if (!wrap.isConnected) return;
     wrap.remove();
     document.removeEventListener('keydown', key);
     modalClose = null;
     onClose?.();
+    if (opener?.isConnected) opener.focus?.({ preventScroll: true });
   };
-  const key = (e) => e.key === 'Escape' && dismissable && close();
+  const key = (e) => {
+    if (e.key === 'Escape' && dismissable) close();
+    if (e.key === 'Tab') {
+      // Keep the keyboard inside the dialog
+      const items = [...sheet.querySelectorAll('button, a[href], input')];
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  };
   document.addEventListener('keydown', key);
   if (dismissable) wrap.addEventListener('click', (e) => e.target === wrap && close());
   modalClose = close;
@@ -203,4 +285,20 @@ export function infoModal(ic, title, text) {
   const m = openModal(`<div class="sheet-icon">${icon(ic, 34)}</div><h3>${esc(title)}</h3><p>${esc(text)}</p>
     ${pill('Got it', { size: 'm', cls: 'block', attrs: 'data-close' })}`);
   m.el.querySelector('[data-close]').onclick = m.close;
+}
+
+/** Short message at the bottom of the screen (also read by screen readers). */
+export function toast(text, ms = 4200) {
+  let el = document.querySelector('.toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), ms);
 }

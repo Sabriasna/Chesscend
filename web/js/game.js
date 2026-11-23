@@ -1,12 +1,13 @@
 // Game page: board, clocks, coach, move list, undo / hints / resign.
 import { icon } from './icons.js';
-import { avatar, bindBoard, boardHTML, esc, openModal, piece, pill } from './ui.js';
-import { clearSavedGame, recordGame, saveGame, state, theme, updateSettings } from './store.js';
+import { avatar, bindBoard, boardHTML, esc, openModal, piece, pill, toast } from './ui.js';
+import { clearSavedGame, discardBrokenGame, recordGame, saveGame, state, theme, updateSettings } from './store.js';
 import { nav } from './app.js';
 import { AI_LEVELS, findBestMove } from '../../src/engine/ai.js';
 import { Game } from '../../src/engine/chess.js';
 import { coachMessage, findThreats } from '../../src/engine/coach.js';
 import { tcLabel } from '../../src/data/timeControls.js';
+import { timeoutResult } from './rules.js';
 
 const other = (c) => (c === 'w' ? 'b' : 'w');
 const START_COUNT = { p: 8, n: 2, b: 2, r: 2, q: 1, k: 1 };
@@ -63,13 +64,26 @@ function computerMove(fen, level) {
   });
 }
 
-export function gamePage({ config, moves: initialMoves, clocks: initialClocks }) {
+export function gamePage({ config, moves: initialMoves, clocks: initialClocks, clockHistory: initialClockHistory, assisted: initialAssisted }) {
   let game = new Game();
-  initialMoves?.forEach((s) => game.playSan(s));
+  let broken = false;
+  for (const s of initialMoves ?? []) {
+    if (!game.playSan(s)) {
+      broken = true; // unreadable save: keep the moves that replay, the original is kept as a backup
+      break;
+    }
+  }
+  if (broken) discardBrokenGame();
+  const resumed = !!initialMoves?.length && !broken;
 
   const isAi = config.mode === 'ai';
   let selected = null;
-  let clocks = initialClocks ?? initialClocksFor(config);
+  let clocks = initialClocks ? { ...initialClocks } : initialClocksFor(config);
+  // Clocks before each move, so that Undo gives the time back.
+  let clockHistory =
+    initialClockHistory && initialClockHistory.length === game.history.length ? initialClockHistory.map((c) => ({ ...c })) : [];
+  // A game where a move was taken back no longer counts for the Computer Rating.
+  let assisted = !!initialAssisted;
   let override = null;
   let thinking = false;
   let manualFlip = false;
@@ -92,9 +106,20 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks })
   /* ---------------- saving ---------------- */
   const persist = () => {
     if (result().over || game.history.length === 0) clearSavedGame();
-    else saveGame({ config, moves: game.sanList(), clocks, savedAt: Date.now() });
+    else saveGame({ config, moves: game.sanList(), clocks, clockHistory, assisted, savedAt: Date.now() });
   };
-  const onHide = () => document.visibilityState === 'hidden' && persist();
+  const persistNow = () => {
+    tickClock();
+    persist();
+  };
+  // Casual games: the clock pauses while the page is hidden or closed (announced on the setup page).
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') {
+      tickClock();
+      stopClock();
+      persist();
+    } else if (alive) startClock();
+  };
 
   /* ---------------- finished game ---------------- */
   function finish() {
@@ -106,7 +131,7 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks })
       let res;
       if (isAi) res = r.winner === null ? 'draw' : r.winner === config.playerColor ? 'win' : 'loss';
       else res = r.winner === null ? 'draw' : r.winner === 'w' ? 'white' : 'black';
-      recordGame({ result: res, mode: config.mode, level: config.aiLevel, reason: r.reason, moves: Math.ceil(game.history.length / 2) });
+      recordGame({ result: res, mode: config.mode, level: config.aiLevel, reason: r.reason, moves: Math.ceil(game.history.length / 2), rated: !assisted });
     }
     persist();
     setTimeout(() => alive && showEnd(), 450);
@@ -120,6 +145,7 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks })
       else title = r.winner === 'w' ? 'White wins!' : 'Black wins!';
     }
     let subtitle = REASONS[r.reason];
+    if (r.reason === 'timeout' && !r.winner) subtitle = 'Time ran out, but the other side has only a king left and cannot win';
     if (r.winner && isAi && r.winner !== config.playerColor) subtitle += '. Every game makes you better!';
     return { title, subtitle };
   }
@@ -127,7 +153,15 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks })
   function showEnd() {
     if (!result().over) return;
     const t = endText();
-    const m = openModal(`<div class="sheet-icon">${icon('trophy', 40)}</div><h3 class="big">${t.title}</h3><p>${t.subtitle}</p>
+    const last = state.stats.games[0];
+    const ratingLine = !isAi
+      ? ''
+      : assisted
+        ? '<p class="sheet-note">Unrated game: a move was taken back, so your Computer Rating did not change.</p>'
+        : last && last.mode === 'ai'
+          ? `<p class="sheet-note">Computer Rating: <b>${last.ratingAfter}</b> (${last.change >= 0 ? '+' : ''}${last.change})</p>`
+          : '';
+    const m = openModal(`<div class="sheet-icon">${icon('trophy', 40)}</div><h3 class="big">${t.title}</h3><p>${t.subtitle}</p>${ratingLine}
       <div class="sheet-actions">
         ${pill('Play again', { icon: 'rotate-cw', attrs: 'data-m="replay"' })}
         ${pill('View the board', { variant: 'light', size: 'm', attrs: 'data-m="close"' })}
@@ -140,18 +174,26 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks })
 
   /* ---------------- clock ---------------- */
   const clockRunning = () => !!clocks && game.history.length > 0 && !result().over;
+  /** Takes the time spent since the last tick off the player to move. */
+  function tickClock() {
+    if (!timer || !clocks) return;
+    const now = Date.now();
+    const t = turn();
+    clocks[t] = Math.max(0, clocks[t] - (now - lastTick));
+    lastTick = now;
+  }
   function startClock() {
     stopClock();
     if (!clockRunning()) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     lastTick = Date.now();
     timer = setInterval(() => {
-      const now = Date.now();
+      tickClock();
       const t = turn();
-      clocks[t] = Math.max(0, clocks[t] - (now - lastTick));
-      lastTick = now;
       updateClocks();
       if (clocks[t] <= 0) {
-        override = { over: true, winner: other(t), reason: 'timeout' };
+        // Official rule: no win on time if the opponent has only a king left.
+        override = timeoutResult(game.pos, t);
         selected = null;
         token++;
         thinking = false;
@@ -176,6 +218,15 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks })
   }
 
   /* ---------------- moves ---------------- */
+  /** Plays a move, keeping the clocks as they were just before it (for Undo). */
+  function play(from, to, promotion = 'q') {
+    tickClock();
+    const before = clocks ? { ...clocks } : null;
+    const entry = game.play(from, to, promotion);
+    if (entry && before) clockHistory.push(before);
+    return entry;
+  }
+
   function afterMove(entry) {
     if (state.settings.haptics) navigator.vibrate?.(entry.move.captured ? 25 : 12);
     if (config.timeControl && game.history.length > 1) {
@@ -200,7 +251,7 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks })
       setTimeout(() => {
         if (!alive || my !== token) return;
         thinking = false;
-        const entry = m ? game.play(m.from, m.to, m.promotion || 'q') : null;
+        const entry = m ? play(m.from, m.to, m.promotion || 'q') : null;
         if (entry) afterMove(entry);
         else draw();
       }, wait);
@@ -217,7 +268,7 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks })
       askPromotion(from, to);
       return true;
     }
-    const entry = game.play(from, to);
+    const entry = play(from, to);
     if (entry) afterMove(entry);
     return true;
   }
@@ -240,21 +291,45 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks })
     });
     m.el.querySelectorAll('[data-p]').forEach((b) => {
       b.onclick = () => {
-        const entry = game.play(from, to, b.dataset.p);
+        const entry = play(from, to, b.dataset.p);
         m.close();
         if (entry) afterMove(entry);
       };
     });
   }
 
+  // No undo once the game is over: the result is already in the statistics.
   const canUndo = () =>
-    !thinking && !override && game.history.length > 0 && (!isAi || game.history.length >= (config.playerColor === 'w' ? 1 : 2));
+    !thinking && !result().over && game.history.length > 0 && (!isAi || game.history.length >= (config.playerColor === 'w' ? 1 : 2));
+
+  function undoOne() {
+    game.undo();
+    const c = clockHistory.pop();
+    if (c && clocks) clocks = { ...c };
+  }
 
   function undo() {
     if (!canUndo()) return;
+    if (isAi && !assisted) {
+      const m = openModal(`<div class="sheet-icon">${icon('rotate-ccw', 34)}</div><h3>Take back your move?</h3>
+        <p>You can, but this game will then be <b>unrated</b>: it will not change your Computer Rating.</p>
+        <div class="sheet-actions">${pill('Take back', { attrs: 'data-m="yes"' })}${pill('Keep playing', { variant: 'light', size: 'm', attrs: 'data-m="no"' })}</div>`);
+      m.el.querySelector('[data-m="no"]').onclick = m.close;
+      m.el.querySelector('[data-m="yes"]').onclick = () => {
+        m.close();
+        assisted = true;
+        doUndo();
+      };
+      return;
+    }
+    doUndo();
+  }
+
+  function doUndo() {
+    stopClock();
     token++;
-    game.undo();
-    if (isAi && game.pos.turn !== config.playerColor) game.undo();
+    undoOne();
+    if (isAi && game.pos.turn !== config.playerColor) undoOne();
     selected = null;
     persist();
     draw();
@@ -284,6 +359,8 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks })
     game = new Game();
     recorded = false;
     clocks = initialClocksFor(config);
+    clockHistory = [];
+    assisted = false;
     override = null;
     selected = null;
     thinking = false;
@@ -439,19 +516,22 @@ export function gamePage({ config, moves: initialMoves, clocks: initialClocks })
           if (selected === from && !tryMove(from, to)) drawBoard();
         },
       });
-      document.addEventListener('visibilitychange', onHide);
-      window.addEventListener('pagehide', persist);
+      document.addEventListener('visibilitychange', onVisibility);
+      window.addEventListener('pagehide', persistNow);
       draw();
       startClock();
       maybeComputer();
+      if (broken) toast('Part of your saved game could not be read. The game continues from the last readable move.');
+      else if (resumed && clocks) toast('Game resumed. The clock was paused while you were away.');
     },
     unmount() {
       alive = false;
       token++;
+      tickClock();
       stopClock();
       persist();
-      document.removeEventListener('visibilitychange', onHide);
-      window.removeEventListener('pagehide', persist);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', persistNow);
     },
     actions: {
       undo,

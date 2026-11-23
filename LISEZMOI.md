@@ -52,3 +52,20 @@ Une version site de Chesscend, responsive (ordinateur, tablette, téléphone), a
 | Pages leçon et puzzle | `web/js/boards.js` |
 
 La progression (classement, leçons, puzzles, partie en cours) est enregistrée dans le navigateur de chaque visiteur.
+
+### Règles des parties (site)
+
+- **Pendule :** en partie amicale ou contre l'ordinateur, elle se met en pause quand la page est cachée ou fermée, puis reprend au même temps.
+- **Annuler un coup :** possible pendant la partie, avec le temps rendu. Contre l'ordinateur, la partie devient alors « unrated » et ne change pas le Computer Rating. Impossible une fois la partie terminée.
+- **Temps écoulé :** la partie est perdue, sauf si l'adversaire n'a plus que son roi (nulle, règle officielle).
+- **Nulles automatiques :** pat, triple répétition, 50 coups sans prise ni coup de pion, matériel insuffisant.
+- **Computer Rating** (contre l'ordinateur, enregistré dans le navigateur) et **Online Rating** (futur jeu en ligne) sont séparés.
+
+### Classement en ligne
+
+Le classement mondial et le classement entre amis ont besoin d'un serveur, qui n'existe pas encore. Voir `docs/BACKEND.md`.
+
+### Tests
+
+- Moteur, sauvegardes, classements : `node --test tests/*.test.mjs`
+- Site dans un vrai navigateur (Chrome et Python Playwright nécessaires) : `python3 tests/browser/e2e.py`

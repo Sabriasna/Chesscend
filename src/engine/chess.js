@@ -89,7 +89,12 @@ export class Position {
     }
     /** Clé de position pour la triple répétition (sans les compteurs). */
     key() {
-        return this.fen().split(' ').slice(0, 4).join(' ');
+        const parts = this.fen().split(' ').slice(0, 4);
+        // Une case de prise en passant ne compte que si la prise est vraiment possible
+        // (règle officielle : positions identiques = mêmes coups possibles).
+        if (this.ep >= 0 && !this.legalMoves().some((m) => m.flag === 'e'))
+            parts[3] = '-';
+        return parts.join(' ');
     }
     findKing(color) {
         for (let i = 0; i < 64; i++) {
