@@ -64,6 +64,10 @@ revoke all on public.online_games from anon, authenticated;
 revoke all on public.ratings from anon, authenticated;
 grant select on public.online_games to authenticated;
 grant select on public.ratings to authenticated;
+-- The Edge Function uses the secret key (role service_role): exactly what it needs, nothing more.
+grant select on public.profiles to service_role;
+grant select on public.ratings to service_role;
+grant select, insert, update on public.online_games to service_role;
 
 /* ------------------------------------------------------------------ finishing a game
    One transaction: the game is closed only if it is still active at the expected move,
