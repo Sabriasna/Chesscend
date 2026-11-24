@@ -8,6 +8,7 @@ import { QUICK } from '../../src/data/timeControls.js';
 import { gamePage } from './game.js';
 import { lessonPage, puzzlePage } from './boards.js';
 import { accountPage, resetPasswordPage } from './account.js';
+import { lobbyPage, onlineGamePage } from './online-pages.js';
 import { handleEmailRedirect, isSignedIn } from './auth.js';
 import { startSync, syncNow } from './sync.js';
 import { toast } from './ui.js';
@@ -19,6 +20,7 @@ let navigated = false;
 let pendingGame = null; // config of the next game to start
 
 const TAB_KEYS = TABS.map((tab) => tab.key);
+const AFTER_LOGIN = 'chesscend:after-login';
 
 // Language: saved choice, or ?lang=fr / ?lang=es in the address (English by default).
 const asked = new URLSearchParams(location.search).get('lang');
@@ -78,6 +80,26 @@ export const nav = {
   soon(feature) {
     infoModal('rocket', t('soon.title', { feature: t(`soon.feature.${feature}`) }), t('soon.text'));
   },
+  /** Remembers a page to come back to once the player has signed in (and chosen a username). */
+  returnAfterLogin(name) {
+    try {
+      sessionStorage.setItem(AFTER_LOGIN, name);
+    } catch {
+      /* ignore */
+    }
+  },
+  /** After signing in: back to the remembered page, or to `fallback` (null = stay here). */
+  afterLogin(fallback = 'account') {
+    let back = null;
+    try {
+      back = sessionStorage.getItem(AFTER_LOGIN);
+      sessionStorage.removeItem(AFTER_LOGIN);
+    } catch {
+      /* ignore */
+    }
+    if (back) nav.go(back);
+    else if (fallback) nav.go(fallback);
+  },
   get saved() {
     return loadSavedGame();
   },
@@ -96,6 +118,8 @@ function route(name) {
   if (name === 'profile') return P.profilePage();
   if (name === 'legal') return P.legalPage();
   if (name === 'account') return accountPage();
+  if (name === 'online') return lobbyPage();
+  if (/^online-[0-9a-f-]{36}$/.test(name)) return onlineGamePage(name.slice(7));
   if (name === 'reset-password') return resetPasswordPage();
   if (name.startsWith('course-')) return P.coursePage(name.slice(7));
   if (name.startsWith('lesson-')) return lessonPage(name.slice(7));
@@ -214,7 +238,7 @@ if (fromEmail) {
     else if (r.type === 'oauth') {
       syncNow();
       toast(t('auth.welcomeBack'));
-      nav.go('account');
+      nav.afterLogin();
     } else {
       syncNow();
       toast(t('auth.confirmed'), 6000);

@@ -724,3 +724,28 @@ button.card:active, .tile:active { transform: scale(0.985); }
 .save-bar { margin-top: 22px; display: grid; gap: 8px; }
 .save-hint { text-align: center; color: var(--gold-text); font-weight: 600; }
 #save-settings:disabled { opacity: .35; cursor: default; box-shadow: none; }
+
+/* Online play */
+.online-rating { display: flex; align-items: center; gap: 14px; padding: 16px 18px; }
+.online-rating .grow { display: grid; gap: 2px; }
+.online-rating .num { font-size: 30px; font-weight: 800; }
+.online-buttons { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 22px; }
+.online-wait { display: grid; justify-items: center; text-align: center; gap: 12px; padding: 32px 22px; }
+.online-wait .wait-spin { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; background: var(--gold-pale); color: var(--gold-text); }
+.online-wait .wait-spin .ic, .ic.spin { animation: spin 1.4s linear infinite; }
+.invite-row { display: flex; gap: 8px; width: 100%; max-width: 520px; }
+.invite-row .input { flex: 1; min-width: 0; font-size: 14px; }
+.invite-row .pill { flex: none; }
+.online-change { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; }
+.online-change.green { color: var(--green, #2E7D32); }
+.online-change.red { color: var(--red, #C62828); }
+.draw-offer { flex-wrap: wrap; }
+.draw-offer .offer-actions { display: flex; gap: 8px; width: 100%; justify-content: flex-end; }
+.first-move { text-align: center; color: var(--gold-text); font-weight: 600; margin: 6px 0 0; }
+a.list-row { color: inherit; text-decoration: none; }
+@media (max-width: 520px) {
+  .online-buttons { grid-template-columns: minmax(0, 1fr); }
+  .invite-row { flex-direction: column; }
+}
+.lead-text { color: var(--ink-soft); font-size: 16px; line-height: 1.5; margin: 0 0 8px; }
+.coach.tone-gold { border: 1px solid var(--gold); }

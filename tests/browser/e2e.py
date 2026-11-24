@@ -5,6 +5,9 @@ Run: python3 tests/browser/e2e.py
 import asyncio
 import json
 import urllib.parse
+import urllib.request
+import urllib.error
+import subprocess
 import mimetypes
 import sys
 from pathlib import Path
@@ -16,6 +19,26 @@ SITE = f'{HOST}/Chesscend/web/'
 CHROME = '/usr/bin/google-chrome'
 results = []
 SUPA = 'https://umisavpcofubvegdmglc.supabase.co'
+
+
+ONLINE_PORT = None
+_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def online_call(method, path, body=None, auth=None):
+    req = urllib.request.Request(f'http://127.0.0.1:{ONLINE_PORT}{path}', data=(body or '').encode() if method != 'GET' else None, method=method)
+    if auth:
+        req.add_header('Authorization', auth)
+    req.add_header('Content-Type', 'application/json')
+    try:
+        with _opener.open(req, timeout=10) as r:
+            return r.status, r.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()
+
+
+def online_post(path, payload):
+    return online_call('POST', path, json.dumps(payload))
 
 
 class FakeSupabase:
@@ -55,6 +78,13 @@ class FakeSupabase:
         def out(status, payload=None):
             return route.fulfill(status=status, headers=cors, body=json.dumps(payload) if payload is not None else '')
 
+        if ONLINE_PORT and (path.startswith('/functions/v1/online') or path.startswith('/rest/v1/online_games')
+                            or path.startswith('/rest/v1/ratings') or path.startswith('/rest/v1/rpc/online_')):
+            # online play: the real Edge Function, run by tests/browser/online-server.mjs
+            online_post('/__users', {'users': [{'id': u['id'], 'username': u['username']} for u in self.users.values()],
+                                     'tokens': {k: v for k, v in self.tokens.items() if k.startswith('at')}})
+            status, text = online_call(req.method, path, req.post_data, req.headers.get('authorization'))
+            return await route.fulfill(status=status, headers=cors, body=text)
         if path == '/auth/v1/settings':
             return await out(200, {'external': {'email': True, 'google': self.google}})
         if path.startswith('/auth/v1/authorize?provider=google'):
@@ -355,11 +385,11 @@ async def test_rankings_and_learning(browser):
     await pg.click('[data-act="rtab"][data-arg="global"]')
     await pg.wait_for_timeout(200)
     txt = await pg.inner_text('.rank-body')
-    check('Global tab opens and says honestly that online ranking is not live', 'not live yet' in txt and 'Start Playing' in txt)
+    check('Global tab opens; without a connection it says so (Try again)', 'Try again' in txt, txt[:150])
     check('no fake players in Global', await pg.locator('.lb-list').count() == 0)
     await pg.click('[data-act="rtab"][data-arg="friends"]')
     await pg.wait_for_timeout(200)
-    check('Friends tab opens', 'Friends arrive with online play' in await pg.inner_text('.rank-body'))
+    check('Friends tab opens: signed out, asks to sign in', 'Sign in to see your rivals' in await pg.inner_text('.rank-body'))
     await pg.click('[data-act="rtab"][data-arg="me"]')
     await pg.wait_for_timeout(200)
     t = await pg.inner_text('.rank-body')
@@ -586,6 +616,126 @@ async def test_theme_previews(browser):
         await ctx.close()
 
 
+def signed_in(fake, email, username):
+    """Creates a user in the fake Supabase and returns browser storage holding their session."""
+    uid = f'00000000-0000-4000-8000-{len(fake.users) + 1:012d}'
+    u = {'id': uid, 'email': email, 'password': 'x' * 8, 'username': username, 'confirmed': True}
+    fake.users[email] = u
+    fake.data[uid] = {'settings': {}, 'stats': {}, 'progress': {}}
+    sess = fake._session(u)
+    sess['expires_at'] = 9999999999
+    return u, {'chesscend:version': '2', 'chesscend:session': json.dumps(sess)}
+
+
+async def test_online(browser):
+    fake = FakeSupabase()
+    sab, sab_store = signed_in(fake, 'sab@example.com', 'Sab')
+    lou, lou_store = signed_in(fake, 'lou@example.com', 'Lou')
+    new, new_store = signed_in(fake, 'new@example.com', 'player_1a2b3c4d')
+    c1, p1 = await new_page(browser, 1280, 900, False, storage=sab_store, supabase=fake)
+    c2, p2 = await new_page(browser, 390, 844, True, storage=lou_store, supabase=fake)
+
+    # signed out: invited to log in, and brought back here afterwards
+    c0, p0 = await new_page(browser, 390, 844, True, storage={}, supabase=fake)
+    await p0.goto(SITE + '#online')
+    await p0.wait_for_selector('.state-card')
+    check('online: signed-out players are asked to log in', 'Sign in to play online' in await p0.inner_text('main'))
+    check('online: the page to come back to is remembered', await p0.evaluate("sessionStorage.getItem('chesscend:after-login')") == 'online')
+    await c0.close()
+    # automatic Google name: asked to choose a username first
+    c3, p3 = await new_page(browser, 390, 844, True, storage=new_store, supabase=fake)
+    await p3.goto(SITE + '#online')
+    await p3.wait_for_selector('.state-card')
+    check('online: a username is needed first', 'Choose your username first' in await p3.inner_text('main'))
+    await c3.close()
+
+    # the Play page opens the lobby
+    await p1.goto(SITE + '#play')
+    await p1.click('[data-go="online"] >> nth=0')
+    await p1.wait_for_selector('[data-act="seek"]')
+    check('online: lobby shows the Online Rating (1200 to start)', '1200' in await p1.inner_text('.online-rating'))
+    await p1.click('[data-act="otc"][data-arg="0"]')  # 3 + 2
+    await p1.click('[data-act="seek"]')
+    await p1.wait_for_selector('.online-wait')
+    check('online: searching state shown', 'Looking for an opponent' in await p1.inner_text('main'))
+    await p2.goto(SITE + '#online')
+    await p2.wait_for_selector('[data-act="seek"]')
+    await p2.click('[data-act="otc"][data-arg="0"]')
+    await p2.click('[data-act="seek"]')
+    await p2.wait_for_selector('.board-slot .board', timeout=8000)
+    await p1.wait_for_selector('.board-slot .board', timeout=8000)
+    check('online: both players are taken to the game', '#online-' in p1.url and p1.url.split('#')[1] == p2.url.split('#')[1])
+    names1 = await p1.inner_text('.game-layout')
+    check('online: names and ratings shown', 'Sab' in names1 and 'Lou' in names1 and '1200' in names1)
+    gid = p1.url.split('#online-')[1]
+    db = json.loads(online_call('GET', '/__db')[1])
+    g = next(x for x in db['online_games'] if x['id'] == gid)
+    white, black = (p1, p2) if g['white'] == sab['id'] else (p2, p1)
+    o_w = await white.evaluate("document.querySelector('.board .sq').dataset.sq")
+    o_b = await black.evaluate("document.querySelector('.board .sq').dataset.sq")
+    check('online: each player sees the board from their own side', o_w == '0' and o_b == '63')
+    # Black cannot move first; a piece of the other colour cannot be picked
+    await sq(black, 12)
+    check('online: no move out of turn', await black.locator('.ov-sel').count() == 0)
+    # fool's mate: f3 e5 g4 Qh4#
+    for pg, a, b in [(white, 53, 45), (black, 12, 28), (white, 54, 38), (black, 3, 39)]:
+        await pg.wait_for_function("document.querySelector('.coach-slot')?.innerText.includes('Your move')", timeout=8000)
+        await sq(pg, a)
+        await sq(pg, b)
+        await pg.wait_for_timeout(300)
+    await white.wait_for_selector('.sheet', timeout=8000)
+    await black.wait_for_selector('.sheet', timeout=8000)
+    check('online: the winner is told, with the rating change', 'You won' in await black.inner_text('.sheet') and '+20' in await black.inner_text('.sheet'))
+    check('online: the loser is told too', 'You lost' in await white.inner_text('.sheet') and '-20' in await white.inner_text('.sheet'))
+    db = json.loads(online_call('GET', '/__db')[1])
+    g = next(x for x in db['online_games'] if x['id'] == gid)
+    check('online: the result was written by the server', g['status'] == 'finished' and g['reason'] == 'checkmate' and g['moves'] == ['f3', 'e5', 'g4', 'Qh4#'])
+    await white.click('.sheet [data-m="close"]')
+    await black.click('.sheet [data-m="close"]')
+
+    # rankings: Global needs 5 games, Friends lists the opponent
+    await p1.goto(SITE + '#ranking')
+    await p1.wait_for_selector('.online-card .rating-big b:not(.muted-num)', timeout=8000)
+    mine = await p1.inner_text('.online-card')
+    check('online: My stats shows the real Online Rating', ('1220' in mine or '1180' in mine) and '1 of 5' in mine, mine[:160])
+    await p1.click('[data-act="rtab"][data-arg="global"]')
+    await p1.wait_for_selector('.rank-body .state-card', timeout=8000)
+    check('online: Global ranking honest before 5 games', 'nobody is ranked yet' in await p1.inner_text('.rank-body'))
+    await p1.click('[data-act="rtab"][data-arg="friends"]')
+    await p1.wait_for_selector('.rank-body .lb-list', timeout=8000)
+    fr = await p1.inner_text('.rank-body')
+    check('online: Friends lists the opponent met online', 'Lou' in fr and 'Sab' in fr)
+
+    # the lobby lists the finished game
+    await p2.goto(SITE + '#online')
+    await p2.wait_for_selector('.recent-slot .list-row', timeout=8000)
+    check('online: recent online games listed', 'Sab' in await p2.inner_text('.recent-slot'))
+
+    # invitation link: Sab invites, Lou opens the link
+    await p1.goto(SITE + '#online')
+    await p1.wait_for_selector('[data-act="invite"]')
+    await p1.click('[data-act="invite"]')
+    await p1.wait_for_selector('#invite-link')
+    link = await p1.input_value('#invite-link')
+    check('online: invitation link made', '#online-' in link)
+    await p2.goto(link)
+    await p2.wait_for_selector('.board-slot .board', timeout=8000)
+    await p1.wait_for_selector('.board-slot .board', timeout=8000)
+    check('online: the creator joins when the friend opens the link', p1.url == link and p2.url == link)
+    # draw offer before both have moved is not possible: cancel instead (unrated)
+    check('online: Cancel game offered before the first moves', await p1.locator('[data-act="abort"]').count() == 1)
+    await p1.click('[data-act="abort"]')
+    await p1.wait_for_selector('.sheet', timeout=8000)
+    await p2.wait_for_selector('.sheet', timeout=8000)
+    check('online: cancelled game is unrated for both', 'Not rated' in await p2.inner_text('.sheet'))
+    sticks = await p2.evaluate(STICKING_OUT)
+    check('online: game page fits a phone', not sticks, str(sticks)[:200])
+    errs = [e for e in p1.errors + p2.errors if 'Failed to load resource' not in e]
+    check('online: no script errors', not errs, str(errs)[:300])
+    await c1.close()
+    await c2.close()
+
+
 async def test_profile_save(browser):
     ctx, pg = await new_page(browser, 390, 844, True, storage={'chesscend:settings': '{"lang":"fr"}'})
     await pg.goto(SITE + '#profile')
@@ -664,6 +814,11 @@ async def test_google(browser):
 
 
 async def main():
+    global ONLINE_PORT
+    ONLINE_PORT = 54329
+    server = subprocess.Popen(['node', str(ROOT / 'tests' / 'browser' / 'online-server.mjs'), str(ONLINE_PORT)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    while b'ready' not in server.stdout.readline():
+        pass
     async with async_playwright() as p:
         browser = await p.chromium.launch(executable_path=CHROME)
         for lang in ['fr', 'es']:
@@ -671,7 +826,7 @@ async def main():
                 await test_pages_and_responsive(browser, lang, [(320, 568, True), (390, 844, True), (768, 1024, True), (1280, 800, False)])
             except Exception as e:
                 check(f'responsive {lang}', False, repr(e)[:300])
-        for t in [test_profile_save, test_theme_previews, test_google, test_accounts, test_languages, test_pages_and_responsive, test_undo_restores_clocks, test_pause_when_hidden, test_timeout_and_stats,
+        for t in [test_online, test_profile_save, test_theme_previews, test_google, test_accounts, test_languages, test_pages_and_responsive, test_undo_restores_clocks, test_pause_when_hidden, test_timeout_and_stats,
                   test_unrated_after_undo, test_keyboard_and_resign, test_rankings_and_learning, test_storage_problems,
                   test_github_pages_paths, test_privacy_and_legal]:
             try:
@@ -679,6 +834,7 @@ async def main():
             except Exception as e:  # a crashing test is a failed test
                 check(t.__name__, False, repr(e)[:300])
         await browser.close()
+    server.terminate()
     failed = [r for r in results if not r[1]]
     print(f'\n{len(results) - len(failed)} passed, {len(failed)} failed')
     sys.exit(1 if failed else 0)

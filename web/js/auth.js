@@ -41,10 +41,11 @@ function toSession(r) {
 
 /** Error with a code the pages translate (see auth.err.* in the dictionaries). */
 export class AuthError extends Error {
-  constructor(code, message = code, status = 0) {
+  constructor(code, message = code, status = 0, data = null) {
     super(message);
     this.code = code;
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -66,7 +67,7 @@ function errorCode(status, body) {
 }
 
 /** One request to Supabase. auth: true = as the signed-in user. */
-async function call(path, { method = 'GET', body, auth = false, headers = {}, keepalive = false } = {}) {
+export async function call(path, { method = 'GET', body, auth = false, headers = {}, keepalive = false } = {}) {
   if (auth) await ensureFreshSession();
   const h = { apikey: SUPABASE_KEY, ...headers };
   if (body !== undefined) h['Content-Type'] = 'application/json';
@@ -84,7 +85,7 @@ async function call(path, { method = 'GET', body, auth = false, headers = {}, ke
   } catch {
     data = text;
   }
-  if (!res.ok) throw new AuthError(errorCode(res.status, data), data?.msg || data?.message || String(res.status), res.status);
+  if (!res.ok) throw new AuthError(errorCode(res.status, data), data?.msg || data?.message || String(res.status), res.status, data);
   return data;
 }
 

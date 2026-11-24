@@ -169,12 +169,12 @@ test('every lesson board is a valid position', () => {
 /* ---------- ranking states (test fixtures only: never shown on the site) ---------- */
 
 test('no online service: rankings say so, without fake players', async () => {
-  const res = await loadLeaderboard('global');
+  const res = await loadLeaderboard('global', null);
   assert.deepEqual(res, { status: 'unavailable' });
   const html = leaderboardView('global', res);
   assert.match(html, /not live yet/);
   assert.doesNotMatch(html, /lb-list/);
-  assert.match(leaderboardView('friends', await loadLeaderboard('friends')), /Friends arrive with online play/);
+  assert.match(leaderboardView('friends', await loadLeaderboard('friends', null)), /Friends arrive with online play/);
 });
 
 const fixture = (over) => ({
@@ -190,7 +190,7 @@ test('situation A: nobody registered', async () => {
   const html = leaderboardView('global', res);
   assert.match(html, /Be the first to reach the top\./);
   assert.match(html, /waiting for its first champion/);
-  assert.match(html, /Start Playing/);
+  assert.match(html, /data-go="online"/);
 });
 
 test('situation B: members but nobody ranked', async () => {
@@ -211,8 +211,8 @@ test('situation C: real rows, podium and my position highlighted', async () => {
 
 test('friends: empty state, signed out, and errors', async () => {
   const none = await loadLeaderboard('friends', fixture());
-  assert.match(leaderboardView('friends', none), /Your next rival could be a friend\./);
-  assert.match(leaderboardView('friends', none), /Find Friends/);
+  assert.match(leaderboardView('friends', none), /No rival yet/);
+  assert.match(leaderboardView('friends', none), /Play online/);
   const out = await loadLeaderboard('friends', fixture({ getSession: async () => null }));
   assert.equal(out.status, 'signed-out');
   const err = await loadLeaderboard('global', fixture({ getGlobalLeaderboard: async () => { throw new Error('timeout'); } }));

@@ -11,7 +11,7 @@ const stateCard = (art, title, text, actions = '') => `<div class="card state-ca
   ${actions ? `<div class="state-actions">${actions}</div>` : ''}
 </div>`;
 
-const startPlaying = () => pill(t('common.startPlaying'), { icon: 'play', attrs: 'data-act="quick"' });
+const startPlaying = () => pill(t('online.title'), { icon: 'play', attrs: 'data-go="online"' });
 
 export function loadingView() {
   return `<div class="card list" aria-busy="true" aria-label="${t('lb.loading')}">${'<div class="list-row skel"><span class="skel-dot"></span><span class="skel-line"></span></div>'.repeat(5)}</div>`;
@@ -54,7 +54,7 @@ export function leaderboardView(kind, res) {
         icon('user-plus', 38, 'gold'),
         t('lb.noFriends.title'),
         t('lb.noFriends.text'),
-        res.canSearch ? pill(t('lb.noFriends.button'), { icon: 'search', size: 'm', attrs: 'data-act="find-friends"' }) : '',
+        pill(t('lb.noFriends.button'), { icon: 'search', size: 'm', attrs: 'data-go="online"' }),
       );
 
     case 'empty':

@@ -101,7 +101,7 @@ async function submitLogin(form) {
     await auth.signIn({ email, password });
     await syncNow();
     toast(t('auth.welcomeBack'));
-    nav.go('account');
+    nav.afterLogin();
   } catch (e) {
     busy(form, false);
     if (e.code === 'notConfirmed') pendingEmail = email;
@@ -127,7 +127,7 @@ async function submitSignup(form) {
     if (r.signedIn) {
       await syncNow();
       toast(t('auth.welcome', { name: username }));
-      nav.go('account');
+      nav.afterLogin();
     } else {
       pendingEmail = email;
       view = 'checkEmail';
@@ -233,6 +233,7 @@ async function submitUsername(form) {
     form.querySelector('.form-error').hidden = true;
     form.querySelector('.username-hint').textContent = t('auth.usernameText');
     toast(t('auth.usernameSaved'));
+    nav.afterLogin(null);
   } catch (e) {
     busy(form, false);
     showError(form, e.code, e.message);

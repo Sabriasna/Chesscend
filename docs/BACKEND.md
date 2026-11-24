@@ -95,3 +95,18 @@ Tant que le fournisseur Google n'est pas activé dans Supabase, le bouton affich
 2. Supabase → Authentication → Sign In / Providers → Google : activer, coller l'ID client et le code secret, enregistrer.
 
 Un compte créé avec Google reçoit le pseudo provisoire `player_xxxxxxxx` ; la page Compte demande au joueur d'en choisir un.
+
+## Parties en ligne (activées le 24/11/2026)
+
+- **Base** : `supabase/online.sql` (tables `online_games` et `ratings`, fonctions `finish_online_game`, `online_leaderboard`, `online_opponents`).
+  Les navigateurs ne peuvent que LIRE leurs propres parties et leur propre classement (RLS).
+- **Serveur** : Edge Function `online` (`supabase/functions/online/`), déployée avec `verify_jwt = false`
+  (la session du joueur est vérifiée dans la fonction via `/auth/v1/user`).
+  Elle rejoue et vérifie chaque coup avec le moteur (`src/online/core.js` + `src/engine/chess.js`, copiés dans le dossier de la fonction),
+  tient les pendules, et écrit résultats + classement Elo (K = 40 pour les 20 premières parties, puis 20) en une seule transaction.
+- **Règles** : pendules 3+2, 5, 10, 15+10, 30 min ; couleurs tirées au sort ; pendules lancées après le premier coup de chaque joueur ;
+  60 s pour jouer son premier coup ; annulation possible avant que les deux aient joué (non classée) ; nulle proposée/acceptée ;
+  une seule partie à la fois ; une partie abandonnée par les deux joueurs est clôturée au temps.
+- **Classements** : mondial = joueurs avec au moins 5 parties classées ; « Amis » = joueurs affrontés en ligne.
+- **Redéployer la fonction** : copier `src/online/core.js` → `supabase/functions/online/online/core.js` et `src/engine/chess.js` → `supabase/functions/online/engine/chess.js`, puis déployer `supabase/functions/online`.
+- **Tests** : `tests/online.test.mjs` (règles), `tests/online-function.test.mjs` (la fonction), `tests/browser/e2e.py` → `test_online` (deux joueurs dans le navigateur, avec `tests/browser/online-server.mjs`).

@@ -5,7 +5,7 @@ import {
   avatar, badge, esc, goldPiece, goldScene, hero, piece, pill, progressBar, sectionHeader, segmented, tile, toast,
 } from './ui.js';
 import { BOT_RATING, ratingHistory, state, summarize, updateSettings } from './store.js';
-import { loadLeaderboard } from './online.js';
+import { MIN_RANKED_GAMES, loadLeaderboard, myRating } from './online.js';
 import { leaderboardView } from './leaderboard.js';
 import { nav } from './app.js';
 import {
@@ -126,7 +126,7 @@ export function playPage() {
     <div class="tiles tiles-3">${quickTiles(true)}</div>
     <div class="tiles tiles-3 mt">
       ${tile({ ic: 'swords', label: t('play.friend'), sub: t('play.friendSub'), attrs: 'data-go="setup-friend"' })}
-      ${tile({ ic: 'users', label: t('play.findOpponent'), sub: t('play.findOpponentSub'), soon: true, attrs: 'data-act="soon" data-arg="online"' })}
+      ${tile({ ic: 'users', label: t('play.findOpponent'), sub: t('play.findOpponentSub'), attrs: 'data-go="online"' })}
       ${tile({ ic: 'sliders', label: t('play.custom'), sub: t('quick.customSub'), attrs: 'data-go="setup"' })}
     </div>
 
@@ -154,7 +154,7 @@ export function playPage() {
     <div class="card list modes">
       <div class="list-row">${icon('robot', 22)}<span class="grow"><strong class="td">${t('play.mode.ai')}</strong><span class="small">${t('play.mode.aiText')}</span></span>${badge(t('rating.computer'), 'green')}</div>
       <div class="list-row">${icon('swords', 22)}<span class="grow"><strong class="td">${t('play.mode.local')}</strong><span class="small">${t('play.mode.localText')}</span></span>${badge(t('common.unrated'))}</div>
-      <div class="list-row is-off">${icon('users', 22)}<span class="grow"><strong class="td">${t('play.mode.online')}</strong><span class="small">${t('play.mode.onlineText')}</span></span>${badge(t('common.notAvailable'), 'dark')}</div>
+      <a class="list-row" href="#online">${icon('users', 22)}<span class="grow"><strong class="td">${t('play.mode.online')}</strong><span class="small">${t('play.mode.onlineText')}</span></span>${badge(t('rating.online'), 'green')}</a>
     </div>
     <p class="small mt-s">${icon('clock', 13)} ${t('play.pauseNote')}</p>`,
     actions: {
@@ -167,6 +167,23 @@ export function playPage() {
 }
 
 /* ================================================================ RANKING */
+
+/** Online Rating card. r: undefined = loading, null = no rated game yet, or the player's rating row. */
+export function onlineRatingCard(r) {
+  const signedIn = isSignedIn();
+  const head = (b) => `<div class="card-head">${icon('users', 24)}<strong class="h3 grow">${t('rating.online')}</strong>${b}</div>`;
+  if (!signedIn)
+    return `${head(badge(t('ranking.needAccount'), 'gold'))}
+      <div class="rating-big"><b class="muted-num">—</b><span class="small">${t('ranking.notRated')}</span></div>
+      <p class="small">${t('ranking.onlineText')}</p>${pill(t('online.signIn.button'), { icon: 'user-plus', variant: 'light', size: 'm', attrs: 'data-go="account"' })}`;
+  if (r === undefined) return `${head('')}<div class="rating-big"><b class="muted-num">…</b></div><p class="small">${t('ranking.onlineText')}</p>`;
+  const games = r?.games ?? 0;
+  return `${head(badge(t('common.active'), 'green'))}
+    <div class="rating-big"><b>${r?.rating ?? 1200}</b><span class="small">${
+      games >= MIN_RANKED_GAMES ? t('online.rating.ranked', { w: r.wins, d: r.draws, l: r.losses }) : t('online.rating.provisional', { n: games, min: MIN_RANKED_GAMES })
+    }</span></div>
+    <p class="small">${t('ranking.onlineText')}</p>${pill(t('online.title'), { icon: 'play', variant: 'light', size: 'm', attrs: 'data-go="online"' })}`;
+}
 let rankingTab = 'me';
 
 /** Small line chart of the Computer Rating, drawn from the saved results only. */
@@ -233,11 +250,7 @@ function myStats() {
         ${sparkline(hist)}
         <p class="small">${t('ranking.computerText')}</p>
       </div>
-      <div class="card rating-card">
-        <div class="card-head">${icon('users', 24)}<strong class="h3 grow">${t('rating.online')}</strong>${badge(t('common.notAvailable'), 'gold')}</div>
-        <div class="rating-big"><b class="muted-num">—</b><span class="small">${t('ranking.notRated')}</span></div>
-        <p class="small">${t('ranking.onlineText')}</p>
-      </div>
+      <div class="card rating-card online-card">${onlineRatingCard(undefined)}</div>
     </div>
     <div class="podium">
       ${side(s.wins, t('stats.wins'), 'var(--silver)', 'trophy')}
@@ -291,6 +304,11 @@ export function rankingPage() {
     const body = root.querySelector('.rank-body');
     if (rankingTab === 'me') {
       body.innerHTML = myStats();
+      if (isSignedIn()) {
+        const r = await myRating().catch(() => null);
+        const el = body.querySelector('.online-card');
+        if (el && rankingTab === 'me') el.innerHTML = onlineRatingCard(r);
+      }
       return;
     }
     const kind = rankingTab;
